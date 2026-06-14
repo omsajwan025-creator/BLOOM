@@ -1,0 +1,1309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+<title>bloom.</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#FF8FB8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="bloom.">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500;1,600&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- Tailwind CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          blossom: {
+            50:  '#FFF7FA',
+            100: '#FFEDF4',
+            200: '#FFDDEB',
+            300: '#FFC4DC',
+            400: '#FFA9CB',
+            500: '#FF8FB8',
+          },
+          lilac: {
+            100: '#F3EEFF',
+            200: '#E6DCFF',
+            300: '#D6C7FF',
+          },
+        },
+        fontFamily: {
+          serif: ['Cormorant Garamond', 'serif'],
+          sans: ['Quicksand', 'sans-serif'],
+        },
+        boxShadow: {
+          soft: '0 8px 30px rgba(255, 173, 200, 0.25)',
+          softer: '0 4px 16px rgba(255, 173, 200, 0.18)',
+        },
+        borderRadius: {
+          '4xl': '2rem',
+          '5xl': '2.5rem',
+        }
+      }
+    }
+  }
+</script>
+
+<!-- React + Babel -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<style>
+  html, body { font-family: 'Quicksand', sans-serif; height: 100%; margin: 0; }
+  .font-display { font-family: 'Cormorant Garamond', serif; }
+
+  body {
+    background: linear-gradient(160deg, #FFF1F6 0%, #F6EEFF 100%);
+    min-height: 100dvh;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Prevent iOS zoom on focus by ensuring inputs are >=16px */
+  input, textarea, select, button {
+    font-size: 16px;
+  }
+
+  * { -webkit-text-size-adjust: 100%; }
+
+  /* Floating cherry blossom petals */
+  .petal {
+    position: absolute;
+    pointer-events: none;
+    user-select: none;
+    opacity: 0.55;
+    animation: drift linear infinite;
+    will-change: transform;
+  }
+  @keyframes drift {
+    0%   { transform: translateY(-10%) translateX(0) rotate(0deg); }
+    50%  { transform: translateY(50%) translateX(18px) rotate(180deg); }
+    100% { transform: translateY(110%) translateX(-6px) rotate(360deg); }
+  }
+
+  /* Screen fade/slide transition */
+  .screen-enter {
+    animation: screenIn 0.38s ease forwards;
+  }
+  @keyframes screenIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.99); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .pop {
+    animation: pop 0.25s ease;
+  }
+  @keyframes pop {
+    0% { transform: scale(0.9); }
+    60% { transform: scale(1.04); }
+    100% { transform: scale(1); }
+  }
+
+  /* hide scrollbar but keep scroll */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* shutter pulse */
+  @keyframes pulseRing {
+    0% { box-shadow: 0 0 0 0 rgba(255,140,190,0.45); }
+    100% { box-shadow: 0 0 0 16px rgba(255,140,190,0); }
+  }
+  .shutter-pulse { animation: pulseRing 2.2s ease-out infinite; }
+
+  /* bottom sheet */
+  .sheet-enter {
+    animation: sheetIn 0.32s ease forwards;
+  }
+  @keyframes sheetIn {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+  .backdrop-enter {
+    animation: fadeIn 0.25s ease forwards;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+</style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-0 sm:p-6">
+
+<div id="root"></div>
+
+<script type="text/babel" data-presets="env,react">
+const { useState, useMemo, useEffect } = React;
+
+/* ---------------------------------------------------------
+   Helpers
+--------------------------------------------------------- */
+const pad = n => String(n).padStart(2, '0');
+const toKey = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const today = new Date();
+const todayKey = toKey(today);
+
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DAY_NAMES = ['S','M','T','W','T','F','S'];
+const WEEKDAY_LONG = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+function addDays(date, delta) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + delta);
+  return d;
+}
+
+function prettyDate(d) {
+  return `${WEEKDAY_LONG[d.getDay()]}, ${MONTH_NAMES[d.getMonth()]} ${d.getDate()}`;
+}
+
+/* ---------------------------------------------------------
+   Sample data
+--------------------------------------------------------- */
+const initialDiary = {
+  [toKey(today)]: [
+    { name: 'Greek Yogurt & Berries', emoji: '🍓', calories: 180 },
+    { name: 'Avocado Toast', emoji: '🥑', calories: 320 },
+  ],
+  [toKey(addDays(today, -1))]: [
+    { name: 'Iced Matcha Latte', emoji: '🍵', calories: 140 },
+    { name: 'Chicken Caesar Wrap', emoji: '🌯', calories: 410 },
+    { name: 'Dark Chocolate Square', emoji: '🍫', calories: 70 },
+  ],
+  [toKey(addDays(today, -2))]: [
+    { name: 'Overnight Oats', emoji: '🥣', calories: 290 },
+    { name: 'Sushi Rolls', emoji: '🍣', calories: 480 },
+  ],
+  [toKey(addDays(today, -4))]: [
+    { name: 'Smoothie Bowl', emoji: '🍌', calories: 260 },
+    { name: 'Veggie Pasta', emoji: '🍝', calories: 520 },
+  ],
+  [toKey(addDays(today, -6))]: [
+    { name: 'Pancakes & Honey', emoji: '🥞', calories: 380 },
+  ],
+  [toKey(addDays(today, -9))]: [
+    { name: 'Strawberry Smoothie', emoji: '🍓', calories: 210 },
+    { name: 'Caprese Salad', emoji: '🥗', calories: 240 },
+  ],
+};
+
+const SCAN_RESULTS = [
+  { name: 'Avocado Toast', emoji: '🥑', base: 280 },
+  { name: 'Iced Caramel Latte', emoji: '🍮', base: 190 },
+  { name: 'Sushi Platter', emoji: '🍣', base: 350 },
+  { name: 'Acai Bowl', emoji: '🍇', base: 260 },
+];
+
+const SIZE_MODIFIER = { Small: -60, Regular: 0, Large: 90 };
+const EXTRA_OPTIONS = [
+  { label: 'Cheese', emoji: '🧀', cal: 70 },
+  { label: 'Sauce', emoji: '🥫', cal: 40 },
+  { label: 'Fries', emoji: '🍟', cal: 220 },
+  { label: 'Avocado', emoji: '🥑', cal: 60 },
+  { label: 'Whipped Cream', emoji: '🍦', cal: 90 },
+];
+
+const FOOD_KEYWORDS = [
+  { keywords: ['pizza'], name: 'Pizza Slice', emoji: '🍕', base: 285 },
+  { keywords: ['salad'], name: 'Garden Salad', emoji: '🥗', base: 180 },
+  { keywords: ['burger'], name: 'Cheeseburger', emoji: '🍔', base: 450 },
+  { keywords: ['avocado', 'toast'], name: 'Avocado Toast', emoji: '🥑', base: 280 },
+  { keywords: ['sushi'], name: 'Sushi Platter', emoji: '🍣', base: 350 },
+  { keywords: ['smoothie', 'acai', 'bowl'], name: 'Acai Bowl', emoji: '🍇', base: 260 },
+  { keywords: ['latte', 'coffee', 'matcha'], name: 'Iced Latte', emoji: '🍮', base: 190 },
+  { keywords: ['pasta', 'noodle'], name: 'Pasta', emoji: '🍝', base: 480 },
+  { keywords: ['pancake', 'waffle'], name: 'Pancakes', emoji: '🥞', base: 380 },
+  { keywords: ['chicken'], name: 'Grilled Chicken', emoji: '🍗', base: 320 },
+  { keywords: ['yogurt'], name: 'Greek Yogurt & Berries', emoji: '🍓', base: 180 },
+  { keywords: ['wrap', 'burrito'], name: 'Chicken Wrap', emoji: '🌯', base: 410 },
+];
+
+function guessFood(text) {
+  const lower = text.toLowerCase();
+  for (const food of FOOD_KEYWORDS) {
+    if (food.keywords.some(k => lower.includes(k))) return food;
+  }
+  const label = text.trim().replace(/\b\w/g, c => c.toUpperCase()) || 'My Meal';
+  return { name: label, emoji: '🍽️', base: 350 };
+}
+
+/* ---------------------------------------------------------
+   Nutrient + cycle support data
+--------------------------------------------------------- */
+const NUTRIENT_INFO = {
+  iron:        { label: 'iron',         foods: 'spinach, lentils and dark chocolate', emoji: '🩸' },
+  protein:     { label: 'protein',      foods: 'eggs, yogurt and grilled chicken', emoji: '🍗' },
+  fiber:       { label: 'fiber',        foods: 'oats, berries and whole grains', emoji: '🌾' },
+  calcium:     { label: 'calcium',      foods: 'yogurt, leafy greens and almonds', emoji: '🥛' },
+  vitaminC:    { label: 'vitamin C',    foods: 'citrus fruits, strawberries and peppers', emoji: '🍊' },
+  omega3:      { label: 'omega-3s',     foods: 'salmon, walnuts and chia seeds', emoji: '🐟' },
+  carbsEnergy: { label: 'gentle energy', foods: 'sweet potatoes, oats and bananas', emoji: '🍠' },
+  antioxidants:{ label: 'antioxidants', foods: 'berries, dark chocolate and green tea', emoji: '🍇' },
+  healthyFats: { label: 'healthy fats', foods: 'avocado, nuts and olive oil', emoji: '🥑' },
+};
+const ALL_NUTRIENTS = Object.keys(NUTRIENT_INFO);
+
+const NUTRIENT_KEYWORDS = [
+  { keyword: 'yogurt', tags: ['protein', 'calcium'] },
+  { keyword: 'berr', tags: ['vitaminC', 'antioxidants'] },
+  { keyword: 'avocado', tags: ['healthyFats', 'fiber'] },
+  { keyword: 'toast', tags: ['fiber'] },
+  { keyword: 'matcha', tags: ['antioxidants'] },
+  { keyword: 'latte', tags: ['calcium'] },
+  { keyword: 'coffee', tags: ['calcium'] },
+  { keyword: 'chicken', tags: ['protein', 'iron'] },
+  { keyword: 'wrap', tags: ['protein'] },
+  { keyword: 'burrito', tags: ['protein'] },
+  { keyword: 'chocolate', tags: ['iron', 'antioxidants'] },
+  { keyword: 'oat', tags: ['fiber', 'carbsEnergy'] },
+  { keyword: 'sushi', tags: ['omega3', 'protein'] },
+  { keyword: 'smoothie', tags: ['antioxidants', 'fiber'] },
+  { keyword: 'acai', tags: ['antioxidants', 'fiber'] },
+  { keyword: 'bowl', tags: ['fiber'] },
+  { keyword: 'pasta', tags: ['carbsEnergy', 'fiber'] },
+  { keyword: 'noodle', tags: ['carbsEnergy'] },
+  { keyword: 'pancake', tags: ['carbsEnergy'] },
+  { keyword: 'waffle', tags: ['carbsEnergy'] },
+  { keyword: 'salad', tags: ['fiber', 'vitaminC'] },
+  { keyword: 'caprese', tags: ['calcium', 'protein'] },
+  { keyword: 'pizza', tags: ['carbsEnergy', 'calcium'] },
+  { keyword: 'burger', tags: ['protein', 'iron'] },
+  { keyword: 'salmon', tags: ['omega3'] },
+  { keyword: 'banana', tags: ['carbsEnergy'] },
+];
+
+function getNutrientTags(name) {
+  const lower = name.toLowerCase();
+  const tags = new Set();
+  NUTRIENT_KEYWORDS.forEach(({ keyword, tags: ts }) => {
+    if (lower.includes(keyword)) ts.forEach(t => tags.add(t));
+  });
+  return [...tags];
+}
+
+const CYCLE_PHASES = [
+  { id: 'menstrual', label: "I'm on my period", emoji: '🩸' },
+  { id: 'follicular', label: 'Follicular', emoji: '🌱' },
+  { id: 'ovulatory', label: 'Ovulatory', emoji: '☀️' },
+  { id: 'luteal', label: 'Luteal', emoji: '🌙' },
+];
+
+const CYCLE_NOTES = {
+  menstrual: "you're on your period — your body could use a little extra iron and gentle nourishment this week, that's completely normal 🩸",
+  follicular: "you're in your follicular phase — your energy is rising, light and fresh foods can feel wonderful right now 🌱",
+  ovulatory: "you're in your ovulatory phase — your body has lovely energy right now, keep nourishing it well ☀️",
+  luteal: "you're in your luteal phase — your body naturally needs a little more nourishment this week, that's completely normal 🌙",
+};
+
+const CYCLE_SUGGESTIONS = {
+  menstrual: [
+    'Dark chocolate, lentils and spinach are great this week — your body needs extra iron 🩸',
+    'Warm soups and herbal teas can feel especially soothing right now 🌸',
+  ],
+  follicular: [
+    'Light, fresh foods like leafy greens, citrus and quinoa can feel great as your energy rises 🌱',
+    'This is a lovely time to try new recipes — your appetite may feel adventurous 🍓',
+  ],
+  ovulatory: [
+    'Foods rich in antioxidants like berries, salmon and walnuts support you during this energetic time ☀️',
+    'Staying hydrated and enjoying colorful, vibrant meals can feel wonderful right now 🌈',
+  ],
+  luteal: [
+    'Your body craves more carbs right now and that is completely normal — oats, sweet potato and bananas can help with energy and mood 🌙',
+    'Magnesium-rich foods like dark chocolate and almonds can help ease tension 🍫',
+  ],
+};
+
+/* ---------------------------------------------------------
+   localStorage helpers
+--------------------------------------------------------- */
+function loadLS(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw !== null ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function saveLS(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+/* ---------------------------------------------------------
+   Decorative cherry blossom petals
+--------------------------------------------------------- */
+function Petals({ count = 8 }) {
+  const petals = useMemo(() => {
+    return Array.from({ length: count }, (_, i) => ({
+      id: i,
+      left: Math.random() * 100,
+      size: 14 + Math.random() * 16,
+      duration: 14 + Math.random() * 14,
+      delay: -Math.random() * 20,
+    }));
+  }, [count]);
+
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+      {petals.map(p => (
+        <span
+          key={p.id}
+          className="petal"
+          style={{
+            left: `${p.left}%`,
+            fontSize: `${p.size}px`,
+            animationDuration: `${p.duration}s`,
+            animationDelay: `${p.delay}s`,
+          }}
+        >🌸</span>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Bottom navigation
+--------------------------------------------------------- */
+const NAV_ITEMS = [
+  { id: 'home', label: 'Today' },
+  { id: 'add', label: 'Add' },
+  { id: 'calendar', label: 'Diary' },
+  { id: 'profile', label: 'Me' },
+];
+
+function NavIcon({ id, active }) {
+  const color = active ? '#FF8FB8' : '#C9BFC9';
+  const stroke = active ? '#FF8FB8' : '#C9BFC9';
+  switch (id) {
+    case 'home':
+      return (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path d="M4 11.5L12 4l8 7.5" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M6 10v9a1 1 0 001 1h10a1 1 0 001-1v-9" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      );
+    case 'camera':
+      return (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="7" width="18" height="13" rx="3" stroke={stroke} strokeWidth="2"/>
+          <path d="M8 7l1.5-2.5h5L16 7" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="12" cy="13.5" r="3.2" stroke={stroke} strokeWidth="2"/>
+        </svg>
+      );
+    case 'calendar':
+      return (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <rect x="3.5" y="5" width="17" height="15" rx="3" stroke={stroke} strokeWidth="2"/>
+          <path d="M3.5 9.5h17" stroke={stroke} strokeWidth="2"/>
+          <path d="M8 3v3.5M16 3v3.5" stroke={stroke} strokeWidth="2" strokeLinecap="round"/>
+          <circle cx="8.2" cy="13.3" r="1.1" fill={color}/>
+          <circle cx="12" cy="13.3" r="1.1" fill={color}/>
+          <circle cx="15.8" cy="16.7" r="1.1" fill={color}/>
+        </svg>
+      );
+    case 'profile':
+      return (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="8.2" r="3.2" stroke={stroke} strokeWidth="2"/>
+          <path d="M4.5 19.5c1.2-3.4 4-5 7.5-5s6.3 1.6 7.5 5" stroke={stroke} strokeWidth="2" strokeLinecap="round"/>
+        </svg>
+      );
+    case 'add':
+      return (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="9" stroke={stroke} strokeWidth="2"/>
+          <path d="M12 8v8M8 12h8" stroke={stroke} strokeWidth="2" strokeLinecap="round"/>
+        </svg>
+      );
+    default: return null;
+  }
+}
+
+function BottomNav({ active, onChange }) {
+  return (
+    <div className="absolute bottom-0 left-0 right-0 z-20 px-4" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+      <div className="bg-white/90 backdrop-blur rounded-4xl shadow-soft flex justify-between items-center px-4 sm:px-6 py-3 border border-blossom-100">
+        {NAV_ITEMS.map(item => {
+          const isActive = active === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => onChange(item.id)}
+              className="flex flex-col items-center gap-1 flex-1 group"
+            >
+              <div className={`flex items-center justify-center w-9 h-9 rounded-full transition-all ${isActive ? 'bg-blossom-100' : ''}`}>
+                <NavIcon id={item.id} active={isActive} />
+              </div>
+              <span className={`text-[11px] font-medium transition-colors ${isActive ? 'text-blossom-500' : 'text-gray-400'}`}>
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Screen 1: Home / Today
+--------------------------------------------------------- */
+function HomeScreen({ diary, goal, onScan, onOpenWheel }) {
+  const entries = diary[todayKey] || [];
+  const total = entries.reduce((sum, e) => sum + e.calories, 0);
+  const pct = Math.min(1, total / goal);
+
+  const r = 64;
+  const circumference = 2 * Math.PI * r;
+  const offset = circumference * (1 - pct);
+
+  return (
+    <div className="h-full flex flex-col px-5 sm:px-6 pt-8 pb-28 screen-enter relative z-10">
+      <div className="text-center mb-5">
+        <p className="text-sm text-blossom-500 font-semibold tracking-wide uppercase">{prettyDate(today)}</p>
+        <h1 className="font-display italic text-4xl text-gray-800 mt-1">bloom.</h1>
+      </div>
+
+      {/* Calorie progress wheel */}
+      <div className="flex justify-center mb-6">
+        <button
+          onClick={onOpenWheel}
+          className="relative w-40 h-40 sm:w-44 sm:h-44 active:scale-95 transition-transform"
+          aria-label="View today's nourishment details"
+        >
+          <svg viewBox="0 0 150 150" className="w-full h-full -rotate-90">
+            <circle cx="75" cy="75" r={r} fill="none" stroke="#FFEDF4" strokeWidth="12" />
+            <circle
+              cx="75" cy="75" r={r} fill="none"
+              stroke="url(#wheelGradient)"
+              strokeWidth="12"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={offset}
+              style={{ transition: 'stroke-dashoffset 0.7s ease' }}
+            />
+            <defs>
+              <linearGradient id="wheelGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#FFC4DC" />
+                <stop offset="100%" stopColor="#FF8FB8" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <p className="font-display text-3xl sm:text-4xl text-gray-800 leading-none">{total}</p>
+            <p className="text-[11px] text-gray-400 font-medium mt-0.5">of {goal} kcal</p>
+            <p className="text-[10px] text-blossom-400 font-semibold mt-1 tracking-wide">tap for more</p>
+          </div>
+        </button>
+      </div>
+
+      {/* Food list */}
+      <p className="text-sm font-semibold text-gray-500 mb-3 px-1">Logged today</p>
+      <div className="flex-1 overflow-y-auto no-scrollbar space-y-3">
+        {entries.length === 0 && (
+          <div className="text-center text-gray-400 text-sm pt-10 font-medium">
+            Nothing logged yet today 🌱<br/>tap the camera to add your first bite
+          </div>
+        )}
+        {entries.map((e, i) => (
+          <div key={i} className="bg-white rounded-3xl shadow-softer p-4 flex items-center gap-4 border border-blossom-50 pop">
+            <div className="w-12 h-12 rounded-2xl bg-blossom-50 flex items-center justify-center text-2xl">
+              {e.emoji}
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-gray-700 text-sm">{e.name}</p>
+              <p className="text-xs text-gray-400">just now</p>
+            </div>
+            <div className="text-right">
+              <p className="font-display text-lg text-blossom-500 font-semibold leading-none">{e.calories}</p>
+              <p className="text-[10px] text-gray-400">kcal</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Scan button */}
+      <div className="flex justify-center mt-6">
+        <button
+          onClick={onScan}
+          className="shutter-pulse w-20 h-20 rounded-full bg-gradient-to-br from-blossom-300 to-blossom-500 shadow-soft flex items-center justify-center text-white active:scale-95 transition-transform"
+        >
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="7" width="18" height="13" rx="3" stroke="white" strokeWidth="2"/>
+            <path d="M8 7l1.5-2.5h5L16 7" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <circle cx="12" cy="13.5" r="3.2" stroke="white" strokeWidth="2"/>
+          </svg>
+        </button>
+      </div>
+      <p className="text-center text-xs text-blossom-400 font-semibold mt-2 tracking-wide">tap to scan food</p>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Screen 2: Camera / Scan flow
+--------------------------------------------------------- */
+function CameraScreen({ onSaved, onClose }) {
+  const [step, setStep] = useState('camera'); // camera -> questions -> result
+  const [size, setSize] = useState('Regular');
+  const [extras, setExtras] = useState([]);
+  const [result, setResult] = useState(null);
+
+  const toggleExtra = (label) => {
+    setExtras(prev => prev.includes(label) ? prev.filter(x => x !== label) : [...prev, label]);
+  };
+
+  const takePhoto = () => {
+    const food = SCAN_RESULTS[Math.floor(Math.random() * SCAN_RESULTS.length)];
+    setResult(food);
+    setStep('questions');
+  };
+
+  const computeCalories = () => {
+    if (!result) return 0;
+    let cal = result.base + (SIZE_MODIFIER[size] || 0);
+    extras.forEach(label => {
+      const opt = EXTRA_OPTIONS.find(o => o.label === label);
+      if (opt) cal += opt.cal;
+    });
+    return Math.max(50, cal);
+  };
+
+  if (step === 'camera') {
+    return (
+      <div className="h-full flex flex-col screen-enter relative z-10">
+        <div className="flex items-center justify-between px-6 pt-8 pb-4">
+          <button onClick={onClose} className="text-gray-400 text-sm font-semibold">close</button>
+          <p className="font-display italic text-2xl text-gray-800">bloom.</p>
+          <div className="w-10"></div>
+        </div>
+
+        {/* Viewfinder */}
+        <div className="flex-1 mx-5 rounded-4xl relative overflow-hidden border-4 border-white shadow-soft"
+             style={{ background: 'linear-gradient(160deg, #FFE3EE 0%, #F0E2FF 60%, #FFE9F2 100%)' }}>
+          <Petals count={6} />
+          <div className="absolute inset-0 flex items-center justify-center flex-col gap-3 z-10">
+            <div className="text-6xl">🍽️</div>
+            <p className="text-blossom-500 font-semibold text-sm">point at your food</p>
+          </div>
+          {/* viewfinder corners */}
+          {['top-6 left-6 border-t-2 border-l-2', 'top-6 right-6 border-t-2 border-r-2', 'bottom-6 left-6 border-b-2 border-l-2', 'bottom-6 right-6 border-b-2 border-r-2'].map((cls,i) => (
+            <div key={i} className={`absolute w-8 h-8 border-white/80 rounded-sm ${cls}`}></div>
+          ))}
+        </div>
+
+        <div className="flex flex-col items-center py-8">
+          <button
+            onClick={takePhoto}
+            className="w-20 h-20 rounded-full bg-white border-4 border-blossom-300 shadow-soft active:scale-95 transition-transform flex items-center justify-center"
+          >
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blossom-300 to-blossom-500"></div>
+          </button>
+          <p className="text-xs text-blossom-400 font-semibold mt-3 tracking-wide">tap to capture</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 'questions') {
+    return (
+      <div className="h-full flex flex-col px-6 pt-8 pb-28 screen-enter relative z-10 overflow-y-auto no-scrollbar">
+        <div className="text-center mb-6">
+          <p className="text-6xl mb-2">{result.emoji}</p>
+          <h2 className="font-display text-2xl text-gray-800">Looks like {result.name}!</h2>
+          <p className="text-xs text-gray-400 mt-1">help us get the details right</p>
+        </div>
+
+        <div className="bg-white rounded-4xl shadow-softer p-5 mb-4 border border-blossom-50">
+          <p className="font-semibold text-gray-600 text-sm mb-3">What size was this?</p>
+          <div className="flex gap-2">
+            {['Small','Regular','Large'].map(s => (
+              <button
+                key={s}
+                onClick={() => setSize(s)}
+                className={`flex-1 py-2.5 rounded-2xl text-sm font-semibold transition-all border ${
+                  size === s
+                    ? 'bg-gradient-to-br from-blossom-300 to-blossom-500 text-white border-transparent shadow-softer'
+                    : 'bg-blossom-50 text-blossom-400 border-blossom-100'
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-4xl shadow-softer p-5 mb-6 border border-blossom-50">
+          <p className="font-semibold text-gray-600 text-sm mb-3">Any extras?</p>
+          <div className="flex flex-wrap gap-2">
+            {EXTRA_OPTIONS.map(opt => {
+              const active = extras.includes(opt.label);
+              return (
+                <button
+                  key={opt.label}
+                  onClick={() => toggleExtra(opt.label)}
+                  className={`px-3.5 py-2 rounded-full text-sm font-medium transition-all border flex items-center gap-1.5 ${
+                    active
+                      ? 'bg-lilac-100 border-lilac-300 text-gray-600'
+                      : 'bg-blossom-50 border-blossom-100 text-gray-400'
+                  }`}
+                >
+                  <span>{opt.emoji}</span>{opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <button
+          onClick={() => setStep('result')}
+          className="mt-auto bg-gradient-to-br from-blossom-300 to-blossom-500 text-white font-semibold py-3.5 rounded-3xl shadow-soft active:scale-95 transition-transform"
+        >
+          see my result
+        </button>
+      </div>
+    );
+  }
+
+  // result step — auto-saves and confirms gently
+  const calories = computeCalories();
+
+  useEffect(() => {
+    onSaved({ name: result.name, emoji: result.emoji, calories });
+    const t = setTimeout(() => onClose(), 1700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="h-full flex flex-col px-6 pt-12 pb-28 screen-enter relative z-10">
+      <div className="flex-1 flex flex-col items-center justify-center text-center">
+        <div className="w-28 h-28 rounded-full bg-blossom-50 flex items-center justify-center text-6xl mb-5 shadow-softer">
+          {result.emoji}
+        </div>
+        <h2 className="font-display text-3xl text-gray-800 mb-1">{result.name}</h2>
+        <p className="text-xs text-gray-400 mb-5">{size} {extras.length > 0 ? `· ${extras.join(', ')}` : ''}</p>
+        <div className="bg-white rounded-4xl shadow-soft px-10 py-6 border border-blossom-100 mb-4">
+          <p className="font-display text-5xl text-blossom-500 leading-none">{calories}</p>
+          <p className="text-xs text-gray-400 font-semibold mt-1 tracking-wide">approx. calories</p>
+        </div>
+        <div className="bg-blossom-50 rounded-full px-5 py-2.5 pop">
+          <p className="text-sm font-semibold text-blossom-500">saved to your diary 🌸</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Screen 3: Calendar / Diary
+--------------------------------------------------------- */
+function CalendarScreen({ diary }) {
+  const [viewDate, setViewDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selected, setSelected] = useState(today);
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const cells = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+
+  const changeMonth = (delta) => {
+    setViewDate(new Date(year, month + delta, 1));
+  };
+
+  const selectedEntries = diary[toKey(selected)] || [];
+  const selectedTotal = selectedEntries.reduce((s,e) => s + e.calories, 0);
+
+  return (
+    <div className="h-full flex flex-col px-6 pt-8 pb-28 screen-enter relative z-10">
+      <div className="text-center mb-5">
+        <h1 className="font-display italic text-3xl text-gray-800">bloom.</h1>
+        <p className="text-xs text-gray-400 font-medium mt-1">your food journal</p>
+      </div>
+
+      <div className="bg-white rounded-4xl shadow-soft p-5 border border-blossom-100 mb-4">
+        <div className="flex items-center justify-between mb-4">
+          <button onClick={() => changeMonth(-1)} className="w-8 h-8 rounded-full bg-blossom-50 flex items-center justify-center text-blossom-400 font-bold">‹</button>
+          <p className="font-display text-lg text-gray-700">{MONTH_NAMES[month]} {year}</p>
+          <button onClick={() => changeMonth(1)} className="w-8 h-8 rounded-full bg-blossom-50 flex items-center justify-center text-blossom-400 font-bold">›</button>
+        </div>
+
+        <div className="grid grid-cols-7 mb-2">
+          {DAY_NAMES.map((d,i) => (
+            <div key={i} className="text-center text-[11px] font-semibold text-gray-300">{d}</div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-7 gap-y-1">
+          {cells.map((d, i) => {
+            if (!d) return <div key={i}></div>;
+            const key = toKey(d);
+            const hasEntry = !!diary[key];
+            const isSelected = toKey(selected) === key;
+            const isToday = key === todayKey;
+            return (
+              <button
+                key={i}
+                onClick={() => setSelected(d)}
+                className="flex flex-col items-center justify-center py-1.5 relative"
+              >
+                <span className={`w-8 h-8 flex items-center justify-center rounded-full text-sm font-semibold transition-all ${
+                  isSelected
+                    ? 'bg-gradient-to-br from-blossom-300 to-blossom-500 text-white shadow-softer'
+                    : isToday
+                      ? 'border-2 border-blossom-300 text-blossom-500'
+                      : 'text-gray-500'
+                }`}>
+                  {d.getDate()}
+                </span>
+                {hasEntry && (
+                  <span className={`w-1.5 h-1.5 rounded-full mt-0.5 ${isSelected ? 'bg-blossom-400' : 'bg-blossom-300'}`}></span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between px-1 mb-3">
+        <p className="text-sm font-semibold text-gray-500">{prettyDate(selected)}</p>
+        {selectedEntries.length > 0 && (
+          <p className="text-sm font-semibold text-blossom-500">{selectedTotal} kcal</p>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto no-scrollbar space-y-3">
+        {selectedEntries.length === 0 && (
+          <div className="text-center text-gray-400 text-sm pt-8 font-medium">
+            No entries this day 🌷
+          </div>
+        )}
+        {selectedEntries.map((e, i) => (
+          <div key={i} className="bg-white rounded-3xl shadow-softer p-4 flex items-center gap-4 border border-blossom-50 pop">
+            <div className="w-12 h-12 rounded-2xl bg-blossom-50 flex items-center justify-center text-2xl">
+              {e.emoji}
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-gray-700 text-sm">{e.name}</p>
+            </div>
+            <div className="text-right">
+              <p className="font-display text-lg text-blossom-500 font-semibold leading-none">{e.calories}</p>
+              <p className="text-[10px] text-gray-400">kcal</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Screen 4: Profile / Me
+--------------------------------------------------------- */
+const SIMPLE_SETTINGS_ITEMS = [
+  { label: 'Reminders', emoji: '⏰', detail: 'Daily at 8:00 PM' },
+  { label: 'Share with a Friend', emoji: '💌', detail: 'Send your bloom. link' },
+];
+
+const VIBES = ['😴','😕','🙂','😄','🥰'];
+
+function ProfileScreen({ goal, setGoal, cyclePhase, setCyclePhase, vibe, setVibe }) {
+  const [openItem, setOpenItem] = useState(null);
+
+  const cyclePhaseLabel = cyclePhase
+    ? (CYCLE_PHASES.find(p => p.id === cyclePhase) || {}).label || 'Set'
+    : 'Not tracking';
+
+  return (
+    <div className="h-full flex flex-col px-6 pt-8 pb-28 screen-enter relative z-10 overflow-y-auto no-scrollbar">
+      <div className="text-center mb-6">
+        <div className="w-24 h-24 mx-auto rounded-full bg-gradient-to-br from-blossom-200 to-lilac-200 flex items-center justify-center text-4xl shadow-soft mb-3">
+          🌸
+        </div>
+        <h1 className="font-display text-2xl text-gray-800">Hi, Mia</h1>
+        <p className="text-xs text-gray-400 font-medium">mia.bloom@email.com</p>
+      </div>
+
+      {/* Streak */}
+      <div className="bg-gradient-to-br from-blossom-100 to-lilac-100 rounded-4xl shadow-softer p-5 mb-5 flex items-center gap-4 border border-blossom-100">
+        <div className="text-4xl">🌸</div>
+        <div>
+          <p className="font-display text-2xl text-gray-800 leading-none">14 day streak</p>
+          <p className="text-xs text-gray-500 font-medium mt-1">you're on a roll, keep blooming!</p>
+        </div>
+      </div>
+
+      {/* Vibe check */}
+      <div className="bg-white rounded-4xl shadow-softer p-5 mb-5 border border-blossom-50">
+        <p className="font-semibold text-gray-600 text-sm mb-3">how are you feeling today?</p>
+        <div className="flex justify-between">
+          {VIBES.map((v, i) => (
+            <button
+              key={i}
+              onClick={() => setVibe(i)}
+              className={`text-2xl w-11 h-11 rounded-full flex items-center justify-center transition-all ${
+                vibe === i ? 'bg-blossom-100 scale-110 shadow-softer' : 'opacity-50'
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Settings */}
+      <p className="text-sm font-semibold text-gray-500 mb-3 px-1">settings</p>
+      <div className="space-y-2.5">
+
+        {/* My Goal */}
+        <div className="bg-white rounded-3xl shadow-softer border border-blossom-50 overflow-hidden">
+          <button
+            onClick={() => setOpenItem(openItem === 'goal' ? null : 'goal')}
+            className="w-full p-4 flex items-center gap-4 text-left"
+          >
+            <div className="w-10 h-10 rounded-2xl bg-blossom-50 flex items-center justify-center text-xl flex-shrink-0">🎯</div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-gray-700 text-sm">My Goal</p>
+              <p className="text-xs text-blossom-400 font-medium mt-0.5">{goal.toLocaleString()} kcal / day</p>
+            </div>
+            <span className={`text-blossom-300 transition-transform flex-shrink-0 ${openItem === 'goal' ? 'rotate-90' : ''}`}>›</span>
+          </button>
+          {openItem === 'goal' && (
+            <div className="px-4 pb-4">
+              <div className="bg-blossom-50 rounded-2xl p-4">
+                <p className="text-xs text-gray-500 mb-3">set a gentle daily goal — just a soft guide, never a strict rule 💗</p>
+                <input
+                  type="range"
+                  min="1200"
+                  max="2800"
+                  step="50"
+                  value={goal}
+                  onChange={e => setGoal(Number(e.target.value))}
+                  className="w-full accent-[#FF8FB8]"
+                />
+                <div className="flex items-center justify-center gap-2 mt-3">
+                  <input
+                    type="number"
+                    min="1200"
+                    max="2800"
+                    step="50"
+                    value={goal}
+                    onChange={e => setGoal(Math.max(1200, Math.min(2800, Number(e.target.value) || 0)))}
+                    className="w-24 text-center bg-white rounded-2xl border border-blossom-100 py-2 font-display text-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-blossom-200"
+                  />
+                  <span className="text-sm text-gray-400 font-medium">kcal / day</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Cycle Settings */}
+        <div className="bg-white rounded-3xl shadow-softer border border-blossom-50 overflow-hidden">
+          <button
+            onClick={() => setOpenItem(openItem === 'cycle' ? null : 'cycle')}
+            className="w-full p-4 flex items-center gap-4 text-left"
+          >
+            <div className="w-10 h-10 rounded-2xl bg-blossom-50 flex items-center justify-center text-xl flex-shrink-0">🌙</div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-gray-700 text-sm">Cycle Settings</p>
+              <p className="text-xs text-blossom-400 font-medium mt-0.5">{cyclePhaseLabel}</p>
+            </div>
+            <span className={`text-blossom-300 transition-transform flex-shrink-0 ${openItem === 'cycle' ? 'rotate-90' : ''}`}>›</span>
+          </button>
+          {openItem === 'cycle' && (
+            <div className="px-4 pb-4">
+              <div className="bg-blossom-50 rounded-2xl p-4">
+                <p className="text-xs text-gray-500 mb-3">tell us how you're feeling and we'll gently tailor your suggestions 🌙</p>
+                <div className="flex flex-wrap gap-2">
+                  {CYCLE_PHASES.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => setCyclePhase(cyclePhase === p.id ? null : p.id)}
+                      className={`px-3.5 py-2 rounded-full text-sm font-medium transition-all border flex items-center gap-1.5 ${
+                        cyclePhase === p.id
+                          ? 'bg-lilac-100 border-lilac-300 text-gray-600'
+                          : 'bg-white border-blossom-100 text-gray-400'
+                      }`}
+                    >
+                      <span>{p.emoji}</span>{p.label}
+                    </button>
+                  ))}
+                </div>
+                {cyclePhase && (
+                  <p className="text-xs text-gray-400 mt-3 leading-relaxed">{CYCLE_NOTES[cyclePhase]}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {SIMPLE_SETTINGS_ITEMS.map((item, i) => {
+          const open = openItem === `simple-${i}`;
+          return (
+            <button
+              key={i}
+              onClick={() => setOpenItem(open ? null : `simple-${i}`)}
+              className="w-full bg-white rounded-3xl shadow-softer p-4 flex items-center gap-4 border border-blossom-50 text-left"
+            >
+              <div className="w-10 h-10 rounded-2xl bg-blossom-50 flex items-center justify-center text-xl flex-shrink-0">
+                {item.emoji}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-gray-700 text-sm">{item.label}</p>
+                {open && <p className="text-xs text-blossom-400 font-medium mt-0.5">{item.detail}</p>}
+              </div>
+              <span className={`text-blossom-300 transition-transform flex-shrink-0 ${open ? 'rotate-90' : ''}`}>›</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Screen: Add (type what you ate, AI estimates calories)
+--------------------------------------------------------- */
+function AddScreen({ onSaved, onClose }) {
+  const [step, setStep] = useState('input'); // input -> thinking -> questions -> result
+  const [text, setText] = useState('');
+  const [size, setSize] = useState('Regular');
+  const [extras, setExtras] = useState([]);
+  const [result, setResult] = useState(null);
+
+  const toggleExtra = (label) => {
+    setExtras(prev => prev.includes(label) ? prev.filter(x => x !== label) : [...prev, label]);
+  };
+
+  const submit = () => {
+    if (!text.trim()) return;
+    setStep('thinking');
+    setTimeout(() => {
+      setResult(guessFood(text));
+      setStep('questions');
+    }, 900);
+  };
+
+  const computeCalories = () => {
+    if (!result) return 0;
+    let cal = result.base + (SIZE_MODIFIER[size] || 0);
+    extras.forEach(label => {
+      const opt = EXTRA_OPTIONS.find(o => o.label === label);
+      if (opt) cal += opt.cal;
+    });
+    return Math.max(50, cal);
+  };
+
+  if (step === 'input') {
+    return (
+      <div className="h-full flex flex-col px-6 pt-8 pb-28 screen-enter relative z-10">
+        <div className="flex items-center justify-between mb-6">
+          <button onClick={onClose} className="text-gray-400 text-sm font-semibold">close</button>
+          <p className="font-display italic text-2xl text-gray-800">bloom.</p>
+          <div className="w-10"></div>
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center text-center px-2">
+          <div className="text-5xl mb-4">🌸</div>
+          <h2 className="font-display text-2xl text-gray-800 mb-2">What did you eat?</h2>
+          <p className="text-xs text-gray-400 mb-6">describe it in your own words and bloom. ai will estimate the calories</p>
+
+          <textarea
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder="e.g. a bowl of pasta with chicken"
+            rows={4}
+            className="w-full bg-white rounded-3xl shadow-softer border border-blossom-100 p-4 text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-blossom-200 resize-none"
+          />
+        </div>
+
+        <button
+          onClick={submit}
+          disabled={!text.trim()}
+          className="bg-gradient-to-br from-blossom-300 to-blossom-500 text-white font-semibold py-3.5 rounded-3xl shadow-soft active:scale-95 transition-transform disabled:opacity-40"
+        >
+          ask bloom. ai
+        </button>
+      </div>
+    );
+  }
+
+  if (step === 'thinking') {
+    return (
+      <div className="h-full flex flex-col items-center justify-center screen-enter relative z-10">
+        <div className="text-5xl mb-4 animate-bounce">🌸</div>
+        <p className="text-blossom-400 font-semibold text-sm">thinking about your meal...</p>
+      </div>
+    );
+  }
+
+  if (step === 'questions') {
+    return (
+      <div className="h-full flex flex-col px-6 pt-8 pb-28 screen-enter relative z-10 overflow-y-auto no-scrollbar">
+        <div className="text-center mb-6">
+          <p className="text-6xl mb-2">{result.emoji}</p>
+          <h2 className="font-display text-2xl text-gray-800">Sounds like {result.name}!</h2>
+          <p className="text-xs text-gray-400 mt-1">a couple quick questions to nail the count</p>
+        </div>
+
+        <div className="bg-white rounded-4xl shadow-softer p-5 mb-4 border border-blossom-50">
+          <p className="font-semibold text-gray-600 text-sm mb-3">What size was this?</p>
+          <div className="flex gap-2">
+            {['Small','Regular','Large'].map(s => (
+              <button
+                key={s}
+                onClick={() => setSize(s)}
+                className={`flex-1 py-2.5 rounded-2xl text-sm font-semibold transition-all border ${
+                  size === s
+                    ? 'bg-gradient-to-br from-blossom-300 to-blossom-500 text-white border-transparent shadow-softer'
+                    : 'bg-blossom-50 text-blossom-400 border-blossom-100'
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-4xl shadow-softer p-5 mb-6 border border-blossom-50">
+          <p className="font-semibold text-gray-600 text-sm mb-3">Any extras?</p>
+          <div className="flex flex-wrap gap-2">
+            {EXTRA_OPTIONS.map(opt => {
+              const active = extras.includes(opt.label);
+              return (
+                <button
+                  key={opt.label}
+                  onClick={() => toggleExtra(opt.label)}
+                  className={`px-3.5 py-2 rounded-full text-sm font-medium transition-all border flex items-center gap-1.5 ${
+                    active
+                      ? 'bg-lilac-100 border-lilac-300 text-gray-600'
+                      : 'bg-blossom-50 border-blossom-100 text-gray-400'
+                  }`}
+                >
+                  <span>{opt.emoji}</span>{opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <button
+          onClick={() => setStep('result')}
+          className="mt-auto bg-gradient-to-br from-blossom-300 to-blossom-500 text-white font-semibold py-3.5 rounded-3xl shadow-soft active:scale-95 transition-transform"
+        >
+          see my result
+        </button>
+      </div>
+    );
+  }
+
+  // result step — auto-saves and confirms gently
+  const calories = computeCalories();
+
+  useEffect(() => {
+    onSaved({ name: result.name, emoji: result.emoji, calories });
+    const t = setTimeout(() => onClose(), 1700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="h-full flex flex-col px-6 pt-12 pb-28 screen-enter relative z-10">
+      <div className="flex-1 flex flex-col items-center justify-center text-center">
+        <div className="w-28 h-28 rounded-full bg-blossom-50 flex items-center justify-center text-6xl mb-5 shadow-softer">
+          {result.emoji}
+        </div>
+        <h2 className="font-display text-3xl text-gray-800 mb-1">{result.name}</h2>
+        <p className="text-xs text-gray-400 mb-5">{size} {extras.length > 0 ? `· ${extras.join(', ')}` : ''}</p>
+        <div className="bg-white rounded-4xl shadow-soft px-10 py-6 border border-blossom-100 mb-4">
+          <p className="font-display text-5xl text-blossom-500 leading-none">{calories}</p>
+          <p className="text-xs text-gray-400 font-semibold mt-1 tracking-wide">approx. calories</p>
+        </div>
+        <div className="bg-blossom-50 rounded-full px-5 py-2.5 pop">
+          <p className="text-sm font-semibold text-blossom-500">saved to your diary 🌸</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Nutrient / nourishment panel (calorie wheel tap)
+--------------------------------------------------------- */
+function NutrientPanel({ diary, goal, cyclePhase, onClose }) {
+  const entries = diary[todayKey] || [];
+  const total = entries.reduce((s, e) => s + e.calories, 0);
+
+  const presentTags = useMemo(() => {
+    const tags = new Set();
+    for (let i = 0; i < 7; i++) {
+      const dayEntries = diary[toKey(addDays(today, -i))] || [];
+      dayEntries.forEach(e => getNutrientTags(e.name).forEach(t => tags.add(t)));
+    }
+    return tags;
+  }, [diary]);
+
+  const missing = ALL_NUTRIENTS.filter(n => !presentTags.has(n)).slice(0, 2);
+
+  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+  let suggestions;
+  if (cyclePhase && CYCLE_SUGGESTIONS[cyclePhase]) {
+    suggestions = CYCLE_SUGGESTIONS[cyclePhase];
+  } else if (missing.length > 0) {
+    suggestions = missing.map(n =>
+      `${cap(NUTRIENT_INFO[n].foods)} could be lovely this week — they're rich in ${NUTRIENT_INFO[n].label} ${NUTRIENT_INFO[n].emoji}`
+    );
+  } else {
+    suggestions = ["You're nourishing your body so beautifully this week 🌸"];
+  }
+
+  return (
+    <div className="absolute inset-0 z-40">
+      <div className="absolute inset-0 bg-black/20 backdrop-enter" onClick={onClose}></div>
+      <div className="absolute bottom-0 left-0 right-0 max-h-[85%] bg-white rounded-t-[2.5rem] shadow-2xl sheet-enter overflow-y-auto no-scrollbar"
+           style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
+        <div className="flex justify-center pt-3">
+          <div className="w-10 h-1.5 rounded-full bg-blossom-100"></div>
+        </div>
+
+        <div className="px-6 pt-4 pb-2">
+          <h2 className="font-display text-2xl text-gray-800 text-center mb-4">your nourishment</h2>
+
+          {/* today's intake */}
+          <div className="bg-blossom-50 rounded-3xl p-4 mb-3 text-center">
+            <p className="text-sm text-gray-600 leading-relaxed">
+              you've nourished your body with <span className="font-display text-xl text-blossom-500 font-semibold">{total}</span> calories today 🌸
+            </p>
+            <p className="text-xs text-gray-400 mt-2">your gentle daily goal is {goal} kcal — there's no pressure here, just a soft guide 💗</p>
+          </div>
+
+          {/* cycle note */}
+          {cyclePhase && CYCLE_NOTES[cyclePhase] && (
+            <div className="bg-lilac-100 rounded-3xl p-4 mb-3 text-center">
+              <p className="text-sm text-gray-600 leading-relaxed">{CYCLE_NOTES[cyclePhase]}</p>
+            </div>
+          )}
+
+          {/* nutrient gaps */}
+          {!cyclePhase && missing.length > 0 && (
+            <div className="mb-3">
+              <p className="text-sm font-semibold text-gray-600 mb-2 px-1">your body could use a little more of these this week</p>
+              <div className="space-y-2">
+                {missing.map(n => (
+                  <div key={n} className="bg-white border border-blossom-100 rounded-2xl p-3 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-blossom-50 flex items-center justify-center text-lg">{NUTRIENT_INFO[n].emoji}</div>
+                    <p className="text-xs text-gray-500 leading-relaxed flex-1">
+                      <span className="font-semibold text-gray-600 capitalize">{NUTRIENT_INFO[n].label}</span> — try {NUTRIENT_INFO[n].foods}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* personalised suggestions */}
+          <div className="mb-2">
+            <p className="text-sm font-semibold text-gray-600 mb-2 px-1">a little something for you</p>
+            <div className="space-y-2">
+              {suggestions.slice(0, 3).map((s, i) => (
+                <div key={i} className="bg-gradient-to-br from-blossom-50 to-lilac-100 rounded-2xl p-3.5">
+                  <p className="text-xs text-gray-600 leading-relaxed">{s}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="w-full mt-4 bg-white text-blossom-400 font-semibold py-3 rounded-3xl border border-blossom-200 active:scale-95 transition-transform"
+          >
+            close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   App shell
+--------------------------------------------------------- */
+function App() {
+  const [screen, setScreen] = useState('home');
+  const [diary, setDiary] = useState(() => loadLS('bloom_diary', initialDiary));
+  const [goal, setGoal] = useState(() => loadLS('bloom_goal', 1800));
+  const [cyclePhase, setCyclePhase] = useState(() => loadLS('bloom_cycle', null));
+  const [vibe, setVibe] = useState(() => loadLS('bloom_vibe', 3));
+  const [toast, setToast] = useState(null);
+  const [showWheel, setShowWheel] = useState(false);
+
+  useEffect(() => { saveLS('bloom_diary', diary); }, [diary]);
+  useEffect(() => { saveLS('bloom_goal', goal); }, [goal]);
+  useEffect(() => { saveLS('bloom_cycle', cyclePhase); }, [cyclePhase]);
+  useEffect(() => { saveLS('bloom_vibe', vibe); }, [vibe]);
+
+  const handleSaved = (entry) => {
+    setDiary(prev => ({
+      ...prev,
+      [todayKey]: [...(prev[todayKey] || []), entry],
+    }));
+    setToast(`${entry.name} saved to your diary 🌸`);
+    setTimeout(() => setToast(null), 2200);
+  };
+
+  let content;
+  if (screen === 'home') content = <HomeScreen diary={diary} goal={goal} onScan={() => setScreen('camera')} onOpenWheel={() => setShowWheel(true)} />;
+  else if (screen === 'camera') content = <CameraScreen onSaved={handleSaved} onClose={() => setScreen('home')} />;
+  else if (screen === 'add') content = <AddScreen onSaved={handleSaved} onClose={() => setScreen('home')} />;
+  else if (screen === 'calendar') content = <CalendarScreen diary={diary} />;
+  else content = <ProfileScreen goal={goal} setGoal={setGoal} cyclePhase={cyclePhase} setCyclePhase={setCyclePhase} vibe={vibe} setVibe={setVibe} />;
+
+  return (
+    <div className="relative w-full h-[100dvh] sm:h-[844px] sm:max-h-[92vh] max-w-[430px] bg-[#FFF9FB] sm:rounded-[2.5rem] shadow-2xl overflow-hidden sm:border border-blossom-100">
+      <Petals count={10} />
+      {content}
+      <BottomNav active={screen} onChange={setScreen} />
+      {showWheel && screen === 'home' && (
+        <NutrientPanel diary={diary} goal={goal} cyclePhase={cyclePhase} onClose={() => setShowWheel(false)} />
+      )}
+      {toast && (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-white shadow-soft rounded-full px-5 py-2.5 text-sm font-semibold text-blossom-500 border border-blossom-100 z-50 pop max-w-[85%] text-center"
+             style={{ marginTop: 'env(safe-area-inset-top)' }}>
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
