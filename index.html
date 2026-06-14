@@ -2,16 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>bloom.</title>
 
 <!-- PWA -->
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#FF8FB8">
+<meta name="theme-color" content="#FFFFFF">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="bloom.">
-<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
 
 <!-- Fonts -->
@@ -63,14 +65,36 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
 <style>
-  html, body { font-family: 'Quicksand', sans-serif; height: 100%; margin: 0; }
+  html, body {
+    font-family: 'Quicksand', sans-serif;
+    height: 100%;
+    margin: 0;
+    font-size: 16px;
+  }
   .font-display { font-family: 'Cormorant Garamond', serif; }
 
+  html {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   body {
-    background: linear-gradient(160deg, #FFF1F6 0%, #F6EEFF 100%);
+    background: #FFFFFF;
     min-height: 100dvh;
     overflow: hidden;
+    overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+  }
+
+  /* Allow text selection / editing inside real inputs */
+  input, textarea {
+    -webkit-user-select: text;
+    user-select: text;
   }
 
   /* Prevent iOS zoom on focus by ensuring inputs are >=16px */
@@ -78,7 +102,24 @@
     font-size: 16px;
   }
 
-  * { -webkit-text-size-adjust: 100%; }
+  /* No website-style link styling anywhere */
+  a { color: inherit; text-decoration: none; }
+
+  /* Comfortable minimum body text size */
+  p, span, div, li, label { font-size: 14px; }
+
+  * {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    box-sizing: border-box;
+  }
+
+  /* hide all scrollbars app-wide */
+  ::-webkit-scrollbar { display: none; width: 0; height: 0; }
+  * { scrollbar-width: none; -ms-overflow-style: none; }
+
+  /* prevent any horizontal scroll */
+  #root, #app-root { overflow-x: hidden; max-width: 100vw; }
 
   /* Floating cherry blossom petals */
   .petal {
@@ -138,6 +179,36 @@
   @keyframes fadeIn {
     from { opacity: 0; }
     to   { opacity: 1; }
+  }
+
+  /* every tap target gets a comfortable minimum hit area */
+  button, a, [role="button"] {
+    min-height: 44px;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button.tap-sm { min-height: 36px; }
+
+  /* gentle save confirmation badge */
+  .save-toast {
+    animation: saveFade 1.6s ease forwards;
+  }
+  @keyframes saveFade {
+    0%   { opacity: 0; transform: translateY(6px) scale(0.92); }
+    18%  { opacity: 1; transform: translateY(0) scale(1); }
+    78%  { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-4px) scale(0.96); }
+  }
+
+  /* screen slide transition */
+  .screen-slide {
+    animation: screenSlide 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  @keyframes screenSlide {
+    from { opacity: 0; transform: translateX(14px); }
+    to   { opacity: 1; transform: translateX(0); }
   }
 </style>
 </head>
@@ -200,44 +271,282 @@ const initialDiary = {
   ],
 };
 
-const SCAN_RESULTS = [
-  { name: 'Avocado Toast', emoji: '🥑', base: 280 },
-  { name: 'Iced Caramel Latte', emoji: '🍮', base: 190 },
-  { name: 'Sushi Platter', emoji: '🍣', base: 350 },
-  { name: 'Acai Bowl', emoji: '🍇', base: 260 },
+/* ---------------------------------------------------------
+   Built-in food database (fallback "AI" lookup — ~140 common foods)
+--------------------------------------------------------- */
+const FOOD_DB = [
+  // breakfast
+  { name: 'Avocado Toast', emoji: '🥑', calories: 280, category: 'generic', keywords: ['avocado toast', 'avocado', 'toast'] },
+  { name: 'Greek Yogurt & Berries', emoji: '🍓', calories: 180, category: 'generic', keywords: ['greek yogurt', 'yogurt and berries', 'yogurt'] },
+  { name: 'Overnight Oats', emoji: '🥣', calories: 290, category: 'generic', keywords: ['overnight oats', 'oatmeal', 'oats'] },
+  { name: 'Pancakes', emoji: '🥞', calories: 380, category: 'generic', keywords: ['pancakes', 'pancake', 'waffles', 'waffle'] },
+  { name: 'Scrambled Eggs', emoji: '🍳', calories: 220, category: 'generic', keywords: ['scrambled eggs', 'omelette', 'omelet', 'eggs'] },
+  { name: 'Bacon and Eggs', emoji: '🥓', calories: 350, category: 'generic', keywords: ['bacon and eggs', 'bacon eggs'] },
+  { name: 'Bagel with Cream Cheese', emoji: '🥯', calories: 350, category: 'generic', keywords: ['bagel'] },
+  { name: 'Granola Bowl', emoji: '🥣', calories: 320, category: 'generic', keywords: ['granola bowl', 'granola'] },
+  { name: 'Smoothie Bowl', emoji: '🍌', calories: 260, category: 'generic', keywords: ['smoothie bowl'] },
+  { name: 'Acai Bowl', emoji: '🍇', calories: 260, category: 'generic', keywords: ['acai bowl', 'acai'] },
+  { name: 'Cereal with Milk', emoji: '🥣', calories: 220, category: 'generic', keywords: ['cereal'] },
+  { name: 'French Toast', emoji: '🍞', calories: 350, category: 'generic', keywords: ['french toast'] },
+  { name: 'Croissant', emoji: '🥐', calories: 280, category: 'generic', keywords: ['croissant'] },
+  { name: 'Muffin', emoji: '🧁', calories: 320, category: 'generic', keywords: ['muffin'] },
+  { name: 'Breakfast Burrito', emoji: '🌯', calories: 420, category: 'generic', keywords: ['breakfast burrito'] },
+
+  // burgers
+  { name: 'Cheeseburger', emoji: '🍔', calories: 450, category: 'burger', keywords: ['cheeseburger', 'cheese burger'] },
+  { name: 'Hamburger', emoji: '🍔', calories: 400, category: 'burger', keywords: ['hamburger', 'burger'] },
+  { name: 'Chicken Burger', emoji: '🍔', calories: 420, category: 'burger', keywords: ['chicken burger'] },
+  { name: 'Veggie Burger', emoji: '🍔', calories: 380, category: 'burger', keywords: ['veggie burger', 'vegan burger'] },
+  { name: 'Double Cheeseburger', emoji: '🍔', calories: 650, category: 'burger', keywords: ['double cheeseburger', 'double burger'] },
+
+  // pizza
+  { name: 'Pizza Slice', emoji: '🍕', calories: 280, category: 'pizza', keywords: ['pizza slice', 'pizza'] },
+  { name: 'Margherita Pizza', emoji: '🍕', calories: 270, category: 'pizza', keywords: ['margherita pizza', 'margherita'] },
+  { name: 'Pepperoni Pizza', emoji: '🍕', calories: 300, category: 'pizza', keywords: ['pepperoni pizza', 'pepperoni'] },
+
+  // salads
+  { name: 'Garden Salad', emoji: '🥗', calories: 150, category: 'salad', keywords: ['garden salad'] },
+  { name: 'Caesar Salad', emoji: '🥗', calories: 320, category: 'salad', keywords: ['caesar salad'] },
+  { name: 'Greek Salad', emoji: '🥗', calories: 220, category: 'salad', keywords: ['greek salad'] },
+  { name: 'Caprese Salad', emoji: '🥗', calories: 240, category: 'salad', keywords: ['caprese salad', 'caprese'] },
+  { name: 'Cobb Salad', emoji: '🥗', calories: 380, category: 'salad', keywords: ['cobb salad'] },
+  { name: 'Tuna Salad', emoji: '🥗', calories: 320, category: 'salad', keywords: ['tuna salad'] },
+  { name: 'Chicken Salad', emoji: '🥗', calories: 350, category: 'salad', keywords: ['chicken salad'] },
+  { name: 'Avocado Salad', emoji: '🥑', calories: 280, category: 'salad', keywords: ['avocado salad'] },
+  { name: 'Quinoa Bowl', emoji: '🥗', calories: 380, category: 'salad', keywords: ['quinoa bowl', 'quinoa salad', 'quinoa'] },
+  { name: 'Buddha Bowl', emoji: '🥗', calories: 420, category: 'salad', keywords: ['buddha bowl'] },
+  { name: 'Fruit Salad', emoji: '🍓', calories: 120, category: 'salad', keywords: ['fruit salad'] },
+  { name: 'Coleslaw', emoji: '🥗', calories: 170, category: 'salad', keywords: ['coleslaw'] },
+  { name: 'Salad', emoji: '🥗', calories: 180, category: 'salad', keywords: ['salad'] },
+
+  // mains
+  { name: 'Sushi Rolls', emoji: '🍣', calories: 350, category: 'generic', keywords: ['sushi rolls', 'sushi'] },
+  { name: 'Sushi Platter', emoji: '🍣', calories: 450, category: 'generic', keywords: ['sushi platter'] },
+  { name: 'Poke Bowl', emoji: '🐟', calories: 480, category: 'generic', keywords: ['poke bowl', 'poke'] },
+  { name: 'Grilled Chicken', emoji: '🍗', calories: 320, category: 'generic', keywords: ['grilled chicken', 'chicken breast'] },
+  { name: 'Fried Chicken', emoji: '🍗', calories: 450, category: 'generic', keywords: ['fried chicken'] },
+  { name: 'Roast Chicken', emoji: '🍗', calories: 380, category: 'generic', keywords: ['roast chicken', 'rotisserie chicken'] },
+  { name: 'Chicken Wrap', emoji: '🌯', calories: 410, category: 'generic', keywords: ['chicken wrap'] },
+  { name: 'Chicken Caesar Wrap', emoji: '🌯', calories: 430, category: 'generic', keywords: ['chicken caesar wrap', 'caesar wrap'] },
+  { name: 'Veggie Wrap', emoji: '🌯', calories: 320, category: 'generic', keywords: ['veggie wrap'] },
+  { name: 'Burrito', emoji: '🌯', calories: 550, category: 'generic', keywords: ['burrito'] },
+  { name: 'Taco', emoji: '🌮', calories: 200, category: 'generic', keywords: ['taco'] },
+  { name: 'Quesadilla', emoji: '🧀', calories: 450, category: 'generic', keywords: ['quesadilla'] },
+  { name: 'Shawarma', emoji: '🌯', calories: 480, category: 'generic', keywords: ['shawarma'] },
+  { name: 'Gyro', emoji: '🌯', calories: 450, category: 'generic', keywords: ['gyro'] },
+  { name: 'Falafel Wrap', emoji: '🧆', calories: 420, category: 'generic', keywords: ['falafel wrap'] },
+  { name: 'Falafel Plate', emoji: '🧆', calories: 480, category: 'generic', keywords: ['falafel plate', 'falafel'] },
+  { name: 'Hummus and Pita', emoji: '🧆', calories: 300, category: 'generic', keywords: ['hummus and pita', 'hummus'] },
+  { name: 'Veggie Pasta', emoji: '🍝', calories: 480, category: 'generic', keywords: ['veggie pasta'] },
+  { name: 'Spaghetti Bolognese', emoji: '🍝', calories: 550, category: 'generic', keywords: ['spaghetti bolognese', 'spaghetti', 'bolognese'] },
+  { name: 'Mac and Cheese', emoji: '🧀', calories: 470, category: 'generic', keywords: ['mac and cheese', 'macaroni and cheese', 'macaroni'] },
+  { name: 'Pasta', emoji: '🍝', calories: 450, category: 'generic', keywords: ['pasta', 'noodles'] },
+  { name: 'Ramen', emoji: '🍜', calories: 500, category: 'generic', keywords: ['ramen'] },
+  { name: 'Pad Thai', emoji: '🍜', calories: 600, category: 'generic', keywords: ['pad thai'] },
+  { name: 'Pho', emoji: '🍜', calories: 450, category: 'generic', keywords: ['pho'] },
+  { name: 'Stir Fry Noodles', emoji: '🍜', calories: 480, category: 'generic', keywords: ['stir fry noodles', 'stir fry'] },
+  { name: 'Egg Fried Noodles', emoji: '🍜', calories: 420, category: 'generic', keywords: ['egg noodles', 'fried noodles'] },
+  { name: 'Fried Rice', emoji: '🍚', calories: 450, category: 'generic', keywords: ['fried rice'] },
+  { name: 'Steamed Rice', emoji: '🍚', calories: 200, category: 'generic', keywords: ['steamed rice', 'white rice', 'rice'] },
+  { name: 'Grilled Salmon', emoji: '🐟', calories: 400, category: 'generic', keywords: ['grilled salmon', 'salmon'] },
+  { name: 'Fish and Chips', emoji: '🐟', calories: 650, category: 'generic', keywords: ['fish and chips'] },
+  { name: 'Shrimp Stir Fry', emoji: '🍤', calories: 380, category: 'generic', keywords: ['shrimp stir fry', 'shrimp'] },
+  { name: 'Steak', emoji: '🥩', calories: 600, category: 'generic', keywords: ['steak'] },
+  { name: 'Hot Dog', emoji: '🌭', calories: 290, category: 'generic', keywords: ['hot dog'] },
+  { name: 'Club Sandwich', emoji: '🥪', calories: 450, category: 'generic', keywords: ['club sandwich'] },
+  { name: 'Turkey Sandwich', emoji: '🥪', calories: 350, category: 'generic', keywords: ['turkey sandwich'] },
+  { name: 'BLT Sandwich', emoji: '🥪', calories: 380, category: 'generic', keywords: ['blt sandwich', 'blt'] },
+  { name: 'Grilled Cheese', emoji: '🧀', calories: 400, category: 'generic', keywords: ['grilled cheese'] },
+  { name: 'Caprese Sandwich', emoji: '🥪', calories: 380, category: 'generic', keywords: ['caprese sandwich'] },
+  { name: 'Sandwich', emoji: '🥪', calories: 350, category: 'generic', keywords: ['sandwich'] },
+  { name: 'Lentil Soup', emoji: '🍲', calories: 220, category: 'generic', keywords: ['lentil soup'] },
+  { name: 'Tomato Soup', emoji: '🍲', calories: 180, category: 'generic', keywords: ['tomato soup'] },
+  { name: 'Chicken Noodle Soup', emoji: '🍲', calories: 200, category: 'generic', keywords: ['chicken noodle soup'] },
+  { name: 'Miso Soup', emoji: '🍲', calories: 60, category: 'generic', keywords: ['miso soup'] },
+  { name: 'Vegetable Curry', emoji: '🍛', calories: 350, category: 'generic', keywords: ['vegetable curry', 'veggie curry'] },
+  { name: 'Chicken Curry', emoji: '🍛', calories: 480, category: 'generic', keywords: ['chicken curry'] },
+  { name: 'Butter Chicken', emoji: '🍛', calories: 550, category: 'generic', keywords: ['butter chicken'] },
+  { name: 'Curry', emoji: '🍛', calories: 420, category: 'generic', keywords: ['curry'] },
+  { name: 'Dumplings', emoji: '🥟', calories: 300, category: 'generic', keywords: ['dumplings', 'gyoza'] },
+  { name: 'Spring Rolls', emoji: '🥢', calories: 200, category: 'generic', keywords: ['spring rolls'] },
+  { name: 'Calzone', emoji: '🥟', calories: 550, category: 'generic', keywords: ['calzone'] },
+  { name: 'Nachos', emoji: '🧀', calories: 480, category: 'generic', keywords: ['nachos'] },
+  { name: 'Loaded Nachos', emoji: '🧀', calories: 650, category: 'generic', keywords: ['loaded nachos'] },
+  { name: 'Chicken Nuggets', emoji: '🍗', calories: 280, category: 'generic', keywords: ['chicken nuggets'] },
+  { name: 'Chicken Tenders', emoji: '🍗', calories: 350, category: 'generic', keywords: ['chicken tenders'] },
+  { name: 'French Fries', emoji: '🍟', calories: 365, category: 'generic', keywords: ['french fries', 'fries'] },
+  { name: 'Onion Rings', emoji: '🧅', calories: 410, category: 'generic', keywords: ['onion rings'] },
+  { name: 'Sweet Potato Fries', emoji: '🍠', calories: 320, category: 'generic', keywords: ['sweet potato fries'] },
+  { name: 'Mashed Potatoes', emoji: '🥔', calories: 220, category: 'generic', keywords: ['mashed potatoes', 'mashed potato'] },
+  { name: 'Baked Potato', emoji: '🥔', calories: 280, category: 'generic', keywords: ['baked potato'] },
+  { name: 'Garlic Bread', emoji: '🥖', calories: 200, category: 'generic', keywords: ['garlic bread'] },
+  { name: 'Veggie Stir Fry', emoji: '🥦', calories: 250, category: 'generic', keywords: ['vegetable stir fry', 'veggie stir fry'] },
+  { name: 'Edamame', emoji: '🫛', calories: 120, category: 'generic', keywords: ['edamame'] },
+  { name: 'Yogurt Parfait', emoji: '🍓', calories: 220, category: 'generic', keywords: ['parfait'] },
+  { name: 'Hummus with Veggies', emoji: '🥕', calories: 150, category: 'generic', keywords: ['hummus with veggies', 'carrot sticks'] },
+
+  // snacks & sweets
+  { name: 'Dark Chocolate Square', emoji: '🍫', calories: 70, category: 'generic', keywords: ['dark chocolate square', 'dark chocolate'] },
+  { name: 'Chocolate Bar', emoji: '🍫', calories: 230, category: 'generic', keywords: ['chocolate bar', 'chocolate'] },
+  { name: 'Cookie', emoji: '🍪', calories: 150, category: 'generic', keywords: ['cookie'] },
+  { name: 'Brownie', emoji: '🍫', calories: 280, category: 'generic', keywords: ['brownie'] },
+  { name: 'Donut', emoji: '🍩', calories: 250, category: 'generic', keywords: ['donut', 'doughnut'] },
+  { name: 'Cupcake', emoji: '🧁', calories: 300, category: 'generic', keywords: ['cupcake'] },
+  { name: 'Ice Cream', emoji: '🍦', calories: 270, category: 'generic', keywords: ['ice cream'] },
+  { name: 'Frozen Yogurt', emoji: '🍦', calories: 180, category: 'generic', keywords: ['frozen yogurt', 'froyo'] },
+  { name: 'Popcorn', emoji: '🍿', calories: 150, category: 'generic', keywords: ['popcorn'] },
+  { name: 'Potato Chips', emoji: '🥔', calories: 160, category: 'generic', keywords: ['potato chips', 'crisps', 'chips'] },
+  { name: 'Pretzel', emoji: '🥨', calories: 380, category: 'generic', keywords: ['pretzel'] },
+  { name: 'Trail Mix', emoji: '🥜', calories: 200, category: 'generic', keywords: ['trail mix'] },
+  { name: 'Mixed Nuts', emoji: '🥜', calories: 170, category: 'generic', keywords: ['mixed nuts', 'nuts'] },
+  { name: 'Apple', emoji: '🍎', calories: 95, category: 'generic', keywords: ['apple'] },
+  { name: 'Banana', emoji: '🍌', calories: 105, category: 'generic', keywords: ['banana'] },
+  { name: 'Orange', emoji: '🍊', calories: 60, category: 'generic', keywords: ['orange'] },
+  { name: 'Grapes', emoji: '🍇', calories: 100, category: 'generic', keywords: ['grapes'] },
+  { name: 'Strawberries', emoji: '🍓', calories: 50, category: 'generic', keywords: ['strawberries', 'strawberry'] },
+  { name: 'Protein Bar', emoji: '🍫', calories: 200, category: 'generic', keywords: ['protein bar'] },
+  { name: 'Granola Bar', emoji: '🍫', calories: 150, category: 'generic', keywords: ['granola bar'] },
+  { name: 'Rice Cakes', emoji: '🍘', calories: 70, category: 'generic', keywords: ['rice cakes', 'rice cake'] },
+  { name: 'Hard Boiled Egg', emoji: '🥚', calories: 78, category: 'generic', keywords: ['hard boiled egg', 'boiled egg'] },
+  { name: 'Cheese Stick', emoji: '🧀', calories: 80, category: 'generic', keywords: ['cheese stick', 'string cheese'] },
+
+  // drinks
+  { name: 'Iced Caramel Latte', emoji: '🍮', calories: 250, category: 'coffee', keywords: ['caramel latte'] },
+  { name: 'Iced Latte', emoji: '🍮', calories: 190, category: 'coffee', keywords: ['iced latte', 'latte'] },
+  { name: 'Cappuccino', emoji: '☕', calories: 120, category: 'coffee', keywords: ['cappuccino'] },
+  { name: 'Espresso', emoji: '☕', calories: 5, category: 'coffee', keywords: ['espresso'] },
+  { name: 'Iced Matcha Latte', emoji: '🍵', calories: 140, category: 'coffee', keywords: ['matcha latte', 'matcha'] },
+  { name: 'Chai Latte', emoji: '🍵', calories: 190, category: 'coffee', keywords: ['chai latte', 'chai'] },
+  { name: 'Hot Chocolate', emoji: '☕', calories: 250, category: 'coffee', keywords: ['hot chocolate'] },
+  { name: 'Black Coffee', emoji: '☕', calories: 5, category: 'coffee', keywords: ['black coffee', 'coffee'] },
+  { name: 'Bubble Tea', emoji: '🧋', calories: 320, category: 'generic', keywords: ['bubble tea', 'boba'] },
+  { name: 'Orange Juice', emoji: '🧃', calories: 110, category: 'generic', keywords: ['orange juice'] },
+  { name: 'Smoothie', emoji: '🥤', calories: 220, category: 'generic', keywords: ['smoothie'] },
+  { name: 'Strawberry Smoothie', emoji: '🍓', calories: 210, category: 'generic', keywords: ['strawberry smoothie'] },
+  { name: 'Protein Shake', emoji: '🥤', calories: 180, category: 'generic', keywords: ['protein shake'] },
+  { name: 'Soda', emoji: '🥤', calories: 150, category: 'generic', keywords: ['soda', 'coke', 'cola'] },
+  { name: 'Energy Drink', emoji: '🥤', calories: 110, category: 'generic', keywords: ['energy drink'] },
+  { name: 'Lemonade', emoji: '🍋', calories: 120, category: 'generic', keywords: ['lemonade'] },
+  { name: 'Iced Tea', emoji: '🧊', calories: 90, category: 'generic', keywords: ['iced tea'] },
+  { name: 'Coconut Water', emoji: '🥥', calories: 60, category: 'generic', keywords: ['coconut water'] },
+  { name: 'Milkshake', emoji: '🥤', calories: 350, category: 'generic', keywords: ['milkshake'] },
 ];
 
-const SIZE_MODIFIER = { Small: -60, Regular: 0, Large: 90 };
-const EXTRA_OPTIONS = [
-  { label: 'Cheese', emoji: '🧀', cal: 70 },
-  { label: 'Sauce', emoji: '🥫', cal: 40 },
-  { label: 'Fries', emoji: '🍟', cal: 220 },
-  { label: 'Avocado', emoji: '🥑', cal: 60 },
-  { label: 'Whipped Cream', emoji: '🍦', cal: 90 },
-];
+/* ---------------------------------------------------------
+   Contextual follow-up question sets per food category
+--------------------------------------------------------- */
+const QUESTION_SETS = {
+  burger: [
+    { id: 'size', label: 'What size?', type: 'single',
+      options: [{ label: 'Small', value: -80 }, { label: 'Regular', value: 0 }, { label: 'Large', value: 120 }] },
+    { id: 'extras', label: 'Any extras?', type: 'multi',
+      options: [
+        { label: 'Cheese', emoji: '🧀', value: 70 },
+        { label: 'Sauce', emoji: '🥫', value: 30 },
+        { label: 'Bacon', emoji: '🥓', value: 80 },
+        { label: 'Fries', emoji: '🍟', value: 220 },
+      ] },
+  ],
+  pizza: [
+    { id: 'slices', label: 'How many slices?', type: 'single', mode: 'multiply',
+      options: [{ label: '1', value: 1 }, { label: '2', value: 2 }, { label: '3', value: 3 }, { label: '4', value: 4 }] },
+    { id: 'extras', label: 'Any extras?', type: 'multi',
+      options: [
+        { label: 'Extra cheese', emoji: '🧀', value: 90 },
+        { label: 'Stuffed crust', emoji: '🥖', value: 120 },
+      ] },
+  ],
+  salad: [
+    { id: 'dressing', label: 'Any dressing?', type: 'single',
+      options: [{ label: 'None', value: 0 }, { label: 'Light', value: 35 }, { label: 'Full', value: 100 }] },
+    { id: 'protein', label: 'Any protein?', type: 'single',
+      options: [
+        { label: 'None', value: 0 },
+        { label: 'Chicken', emoji: '🍗', value: 120 },
+        { label: 'Tuna', emoji: '🐟', value: 90 },
+        { label: 'Egg', emoji: '🥚', value: 80 },
+      ] },
+  ],
+  coffee: [
+    { id: 'size', label: 'What size?', type: 'single',
+      options: [{ label: 'Small', value: -40 }, { label: 'Medium', value: 0 }, { label: 'Large', value: 60 }] },
+    { id: 'additions', label: 'Any additions?', type: 'multi',
+      options: [
+        { label: 'Milk', emoji: '🥛', value: 20 },
+        { label: 'Oat milk', emoji: '🌾', value: 40 },
+        { label: 'Sugar', emoji: '🍯', value: 30 },
+        { label: 'Syrup', emoji: '🍮', value: 60 },
+      ] },
+  ],
+  generic: [
+    { id: 'size', label: 'What size?', type: 'single',
+      options: [{ label: 'Small', value: -60 }, { label: 'Regular', value: 0 }, { label: 'Large', value: 90 }] },
+    { id: 'extras', label: 'Any extras?', type: 'multi',
+      options: [
+        { label: 'Cheese', emoji: '🧀', value: 70 },
+        { label: 'Sauce', emoji: '🥫', value: 40 },
+        { label: 'Fries', emoji: '🍟', value: 220 },
+        { label: 'Avocado', emoji: '🥑', value: 60 },
+        { label: 'Whipped Cream', emoji: '🍦', value: 90 },
+      ] },
+  ],
+};
 
-const FOOD_KEYWORDS = [
-  { keywords: ['pizza'], name: 'Pizza Slice', emoji: '🍕', base: 285 },
-  { keywords: ['salad'], name: 'Garden Salad', emoji: '🥗', base: 180 },
-  { keywords: ['burger'], name: 'Cheeseburger', emoji: '🍔', base: 450 },
-  { keywords: ['avocado', 'toast'], name: 'Avocado Toast', emoji: '🥑', base: 280 },
-  { keywords: ['sushi'], name: 'Sushi Platter', emoji: '🍣', base: 350 },
-  { keywords: ['smoothie', 'acai', 'bowl'], name: 'Acai Bowl', emoji: '🍇', base: 260 },
-  { keywords: ['latte', 'coffee', 'matcha'], name: 'Iced Latte', emoji: '🍮', base: 190 },
-  { keywords: ['pasta', 'noodle'], name: 'Pasta', emoji: '🍝', base: 480 },
-  { keywords: ['pancake', 'waffle'], name: 'Pancakes', emoji: '🥞', base: 380 },
-  { keywords: ['chicken'], name: 'Grilled Chicken', emoji: '🍗', base: 320 },
-  { keywords: ['yogurt'], name: 'Greek Yogurt & Berries', emoji: '🍓', base: 180 },
-  { keywords: ['wrap', 'burrito'], name: 'Chicken Wrap', emoji: '🌯', base: 410 },
-];
+// extra calories implied by free-text descriptions ("anything else?")
+const FREE_TEXT_KEYWORDS = {
+  cheese: 70, bacon: 80, sauce: 40, fries: 220, avocado: 60, cream: 90,
+  sugar: 30, syrup: 60, chocolate: 60, nuts: 80, egg: 80, chicken: 120,
+  butter: 50, mayo: 60, ketchup: 20, honey: 40, milk: 20, oil: 45,
+};
 
+/* ---------------------------------------------------------
+   "bloom. ai" food matching + calorie recalculation
+--------------------------------------------------------- */
 function guessFood(text) {
   const lower = text.toLowerCase();
-  for (const food of FOOD_KEYWORDS) {
-    if (food.keywords.some(k => lower.includes(k))) return food;
+  let best = null;
+  let bestScore = 0;
+  for (const food of FOOD_DB) {
+    for (const kw of food.keywords) {
+      if (lower.includes(kw) && kw.length > bestScore) {
+        bestScore = kw.length;
+        best = food;
+      }
+    }
   }
-  const label = text.trim().replace(/\b\w/g, c => c.toUpperCase()) || 'My Meal';
-  return { name: label, emoji: '🍽️', base: 350 };
+  if (best) return best;
+  const label = text.trim().replace(/\b\w/g, c => c.toUpperCase()).slice(0, 30) || 'My Meal';
+  return { name: label, emoji: '🍽️', calories: 350, category: 'generic', keywords: [] };
+}
+
+function computeCalories(food, answers, freeText) {
+  const questions = QUESTION_SETS[food.category] || QUESTION_SETS.generic;
+  let cal = food.calories;
+
+  questions.forEach(q => {
+    const ans = answers[q.id];
+    if (!ans) return;
+    if (q.type === 'single') {
+      const opt = q.options.find(o => o.label === ans);
+      if (!opt) return;
+      if (q.mode === 'multiply') cal = food.calories * Number(opt.value);
+      else cal += opt.value;
+    } else if (q.type === 'multi' && Array.isArray(ans)) {
+      ans.forEach(label => {
+        const opt = q.options.find(o => o.label === label);
+        if (opt) cal += opt.value;
+      });
+    }
+  });
+
+  if (freeText && freeText.trim()) {
+    const lower = freeText.toLowerCase();
+    Object.entries(FREE_TEXT_KEYWORDS).forEach(([kw, val]) => {
+      if (lower.includes(kw)) cal += val;
+    });
+  }
+
+  return Math.max(20, Math.round(cal));
 }
 
 /* ---------------------------------------------------------
@@ -558,30 +867,144 @@ function HomeScreen({ diary, goal, onScan, onOpenWheel }) {
 /* ---------------------------------------------------------
    Screen 2: Camera / Scan flow
 --------------------------------------------------------- */
+/* ---------------------------------------------------------
+   Shared: contextual follow-up questions + auto-saving result
+--------------------------------------------------------- */
+function FoodQuestions({ result, answers, setAnswers, freeText, setFreeText, heading, onContinue }) {
+  const questions = QUESTION_SETS[result.category] || QUESTION_SETS.generic;
+
+  const setSingle = (qid, label) => setAnswers(prev => ({ ...prev, [qid]: label }));
+  const toggleMulti = (qid, label) => setAnswers(prev => {
+    const current = prev[qid] || [];
+    const next = current.includes(label) ? current.filter(x => x !== label) : [...current, label];
+    return { ...prev, [qid]: next };
+  });
+
+  return (
+    <div className="h-full flex flex-col px-6 pt-8 pb-28 screen-enter relative z-10 overflow-y-auto no-scrollbar">
+      <div className="text-center mb-6">
+        <p className="text-6xl mb-2">{result.emoji}</p>
+        <h2 className="font-display text-2xl text-gray-800">{heading}</h2>
+        <p className="text-xs text-gray-400 mt-1">help us get the details right</p>
+      </div>
+
+      {questions.map(q => (
+        <div key={q.id} className="bg-white rounded-4xl shadow-softer p-5 mb-4 border border-blossom-50">
+          <p className="font-semibold text-gray-600 text-sm mb-3">{q.label}</p>
+          {q.type === 'single' ? (
+            <div className="flex gap-2">
+              {q.options.map(opt => (
+                <button
+                  key={opt.label}
+                  onClick={() => setSingle(q.id, opt.label)}
+                  className={`flex-1 py-2.5 rounded-2xl text-sm font-semibold transition-all border ${
+                    answers[q.id] === opt.label
+                      ? 'bg-gradient-to-br from-blossom-300 to-blossom-500 text-white border-transparent shadow-softer'
+                      : 'bg-blossom-50 text-blossom-400 border-blossom-100'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {q.options.map(opt => {
+                const active = (answers[q.id] || []).includes(opt.label);
+                return (
+                  <button
+                    key={opt.label}
+                    onClick={() => toggleMulti(q.id, opt.label)}
+                    className={`px-3.5 py-2 rounded-full text-sm font-medium transition-all border flex items-center gap-1.5 ${
+                      active
+                        ? 'bg-lilac-100 border-lilac-300 text-gray-600'
+                        : 'bg-blossom-50 border-blossom-100 text-gray-400'
+                    }`}
+                  >
+                    {opt.emoji && <span>{opt.emoji}</span>}{opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ))}
+
+      <div className="bg-white rounded-4xl shadow-softer p-5 mb-6 border border-blossom-50">
+        <p className="font-semibold text-gray-600 text-sm mb-3">anything else?</p>
+        <input
+          type="text"
+          value={freeText}
+          onChange={e => setFreeText(e.target.value)}
+          placeholder="anything else? describe exactly what's in it..."
+          className="w-full bg-blossom-50 rounded-2xl border border-blossom-100 px-4 py-3 text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-blossom-200"
+        />
+      </div>
+
+      <button
+        onClick={onContinue}
+        className="mt-auto bg-gradient-to-br from-blossom-300 to-blossom-500 text-white font-semibold py-3.5 rounded-3xl shadow-soft active:scale-95 transition-transform"
+      >
+        see my result
+      </button>
+    </div>
+  );
+}
+
+function FoodResult({ result, answers, freeText, onSaved, onClose }) {
+  const calories = computeCalories(result, answers, freeText);
+
+  useEffect(() => {
+    onSaved({ name: result.name, emoji: result.emoji, calories });
+    const t = setTimeout(() => onClose(), 1600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const questions = QUESTION_SETS[result.category] || QUESTION_SETS.generic;
+  const summaryParts = [];
+  questions.forEach(q => {
+    const ans = answers[q.id];
+    if (!ans) return;
+    if (q.type === 'single') summaryParts.push(ans);
+    else if (Array.isArray(ans) && ans.length) summaryParts.push(ans.join(', '));
+  });
+  if (freeText.trim()) summaryParts.push(freeText.trim());
+
+  return (
+    <div className="h-full flex flex-col px-6 pt-12 pb-28 screen-enter relative z-10">
+      <div className="flex-1 flex flex-col items-center justify-center text-center">
+        <div className="w-28 h-28 rounded-full bg-blossom-50 flex items-center justify-center text-6xl mb-5 shadow-softer">
+          {result.emoji}
+        </div>
+        <h2 className="font-display text-3xl text-gray-800 mb-1">{result.name}</h2>
+        {summaryParts.length > 0 && (
+          <p className="text-xs text-gray-400 mb-5">{summaryParts.join(' · ')}</p>
+        )}
+        <div className="bg-white rounded-4xl shadow-soft px-10 py-6 border border-blossom-100 mb-4">
+          <p className="font-display text-5xl text-blossom-500 leading-none">{calories}</p>
+          <p className="text-xs text-gray-400 font-semibold mt-1 tracking-wide">approx. calories</p>
+        </div>
+        <div className="save-toast bg-blossom-50 rounded-full px-5 py-2.5">
+          <p className="text-sm font-semibold text-blossom-500">saved 🌸</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CameraScreen({ onSaved, onClose }) {
   const [step, setStep] = useState('camera'); // camera -> questions -> result
-  const [size, setSize] = useState('Regular');
-  const [extras, setExtras] = useState([]);
+  const [answers, setAnswers] = useState({});
+  const [freeText, setFreeText] = useState('');
   const [result, setResult] = useState(null);
 
-  const toggleExtra = (label) => {
-    setExtras(prev => prev.includes(label) ? prev.filter(x => x !== label) : [...prev, label]);
-  };
-
   const takePhoto = () => {
-    const food = SCAN_RESULTS[Math.floor(Math.random() * SCAN_RESULTS.length)];
+    const food = FOOD_DB[Math.floor(Math.random() * FOOD_DB.length)];
     setResult(food);
+    setAnswers({});
+    setFreeText('');
     setStep('questions');
-  };
-
-  const computeCalories = () => {
-    if (!result) return 0;
-    let cal = result.base + (SIZE_MODIFIER[size] || 0);
-    extras.forEach(label => {
-      const opt = EXTRA_OPTIONS.find(o => o.label === label);
-      if (opt) cal += opt.cal;
-    });
-    return Math.max(50, cal);
   };
 
   if (step === 'camera') {
@@ -622,91 +1045,26 @@ function CameraScreen({ onSaved, onClose }) {
 
   if (step === 'questions') {
     return (
-      <div className="h-full flex flex-col px-6 pt-8 pb-28 screen-enter relative z-10 overflow-y-auto no-scrollbar">
-        <div className="text-center mb-6">
-          <p className="text-6xl mb-2">{result.emoji}</p>
-          <h2 className="font-display text-2xl text-gray-800">Looks like {result.name}!</h2>
-          <p className="text-xs text-gray-400 mt-1">help us get the details right</p>
-        </div>
-
-        <div className="bg-white rounded-4xl shadow-softer p-5 mb-4 border border-blossom-50">
-          <p className="font-semibold text-gray-600 text-sm mb-3">What size was this?</p>
-          <div className="flex gap-2">
-            {['Small','Regular','Large'].map(s => (
-              <button
-                key={s}
-                onClick={() => setSize(s)}
-                className={`flex-1 py-2.5 rounded-2xl text-sm font-semibold transition-all border ${
-                  size === s
-                    ? 'bg-gradient-to-br from-blossom-300 to-blossom-500 text-white border-transparent shadow-softer'
-                    : 'bg-blossom-50 text-blossom-400 border-blossom-100'
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-4xl shadow-softer p-5 mb-6 border border-blossom-50">
-          <p className="font-semibold text-gray-600 text-sm mb-3">Any extras?</p>
-          <div className="flex flex-wrap gap-2">
-            {EXTRA_OPTIONS.map(opt => {
-              const active = extras.includes(opt.label);
-              return (
-                <button
-                  key={opt.label}
-                  onClick={() => toggleExtra(opt.label)}
-                  className={`px-3.5 py-2 rounded-full text-sm font-medium transition-all border flex items-center gap-1.5 ${
-                    active
-                      ? 'bg-lilac-100 border-lilac-300 text-gray-600'
-                      : 'bg-blossom-50 border-blossom-100 text-gray-400'
-                  }`}
-                >
-                  <span>{opt.emoji}</span>{opt.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <button
-          onClick={() => setStep('result')}
-          className="mt-auto bg-gradient-to-br from-blossom-300 to-blossom-500 text-white font-semibold py-3.5 rounded-3xl shadow-soft active:scale-95 transition-transform"
-        >
-          see my result
-        </button>
-      </div>
+      <FoodQuestions
+        result={result}
+        answers={answers}
+        setAnswers={setAnswers}
+        freeText={freeText}
+        setFreeText={setFreeText}
+        heading={`Looks like ${result.name}!`}
+        onContinue={() => setStep('result')}
+      />
     );
   }
 
-  // result step — auto-saves and confirms gently
-  const calories = computeCalories();
-
-  useEffect(() => {
-    onSaved({ name: result.name, emoji: result.emoji, calories });
-    const t = setTimeout(() => onClose(), 1700);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   return (
-    <div className="h-full flex flex-col px-6 pt-12 pb-28 screen-enter relative z-10">
-      <div className="flex-1 flex flex-col items-center justify-center text-center">
-        <div className="w-28 h-28 rounded-full bg-blossom-50 flex items-center justify-center text-6xl mb-5 shadow-softer">
-          {result.emoji}
-        </div>
-        <h2 className="font-display text-3xl text-gray-800 mb-1">{result.name}</h2>
-        <p className="text-xs text-gray-400 mb-5">{size} {extras.length > 0 ? `· ${extras.join(', ')}` : ''}</p>
-        <div className="bg-white rounded-4xl shadow-soft px-10 py-6 border border-blossom-100 mb-4">
-          <p className="font-display text-5xl text-blossom-500 leading-none">{calories}</p>
-          <p className="text-xs text-gray-400 font-semibold mt-1 tracking-wide">approx. calories</p>
-        </div>
-        <div className="bg-blossom-50 rounded-full px-5 py-2.5 pop">
-          <p className="text-sm font-semibold text-blossom-500">saved to your diary 🌸</p>
-        </div>
-      </div>
-    </div>
+    <FoodResult
+      result={result}
+      answers={answers}
+      freeText={freeText}
+      onSaved={onSaved}
+      onClose={onClose}
+    />
   );
 }
 
@@ -987,31 +1345,19 @@ function ProfileScreen({ goal, setGoal, cyclePhase, setCyclePhase, vibe, setVibe
 function AddScreen({ onSaved, onClose }) {
   const [step, setStep] = useState('input'); // input -> thinking -> questions -> result
   const [text, setText] = useState('');
-  const [size, setSize] = useState('Regular');
-  const [extras, setExtras] = useState([]);
+  const [answers, setAnswers] = useState({});
+  const [freeText, setFreeText] = useState('');
   const [result, setResult] = useState(null);
-
-  const toggleExtra = (label) => {
-    setExtras(prev => prev.includes(label) ? prev.filter(x => x !== label) : [...prev, label]);
-  };
 
   const submit = () => {
     if (!text.trim()) return;
     setStep('thinking');
     setTimeout(() => {
       setResult(guessFood(text));
+      setAnswers({});
+      setFreeText('');
       setStep('questions');
     }, 900);
-  };
-
-  const computeCalories = () => {
-    if (!result) return 0;
-    let cal = result.base + (SIZE_MODIFIER[size] || 0);
-    extras.forEach(label => {
-      const opt = EXTRA_OPTIONS.find(o => o.label === label);
-      if (opt) cal += opt.cal;
-    });
-    return Math.max(50, cal);
   };
 
   if (step === 'input') {
@@ -1059,91 +1405,26 @@ function AddScreen({ onSaved, onClose }) {
 
   if (step === 'questions') {
     return (
-      <div className="h-full flex flex-col px-6 pt-8 pb-28 screen-enter relative z-10 overflow-y-auto no-scrollbar">
-        <div className="text-center mb-6">
-          <p className="text-6xl mb-2">{result.emoji}</p>
-          <h2 className="font-display text-2xl text-gray-800">Sounds like {result.name}!</h2>
-          <p className="text-xs text-gray-400 mt-1">a couple quick questions to nail the count</p>
-        </div>
-
-        <div className="bg-white rounded-4xl shadow-softer p-5 mb-4 border border-blossom-50">
-          <p className="font-semibold text-gray-600 text-sm mb-3">What size was this?</p>
-          <div className="flex gap-2">
-            {['Small','Regular','Large'].map(s => (
-              <button
-                key={s}
-                onClick={() => setSize(s)}
-                className={`flex-1 py-2.5 rounded-2xl text-sm font-semibold transition-all border ${
-                  size === s
-                    ? 'bg-gradient-to-br from-blossom-300 to-blossom-500 text-white border-transparent shadow-softer'
-                    : 'bg-blossom-50 text-blossom-400 border-blossom-100'
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-4xl shadow-softer p-5 mb-6 border border-blossom-50">
-          <p className="font-semibold text-gray-600 text-sm mb-3">Any extras?</p>
-          <div className="flex flex-wrap gap-2">
-            {EXTRA_OPTIONS.map(opt => {
-              const active = extras.includes(opt.label);
-              return (
-                <button
-                  key={opt.label}
-                  onClick={() => toggleExtra(opt.label)}
-                  className={`px-3.5 py-2 rounded-full text-sm font-medium transition-all border flex items-center gap-1.5 ${
-                    active
-                      ? 'bg-lilac-100 border-lilac-300 text-gray-600'
-                      : 'bg-blossom-50 border-blossom-100 text-gray-400'
-                  }`}
-                >
-                  <span>{opt.emoji}</span>{opt.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <button
-          onClick={() => setStep('result')}
-          className="mt-auto bg-gradient-to-br from-blossom-300 to-blossom-500 text-white font-semibold py-3.5 rounded-3xl shadow-soft active:scale-95 transition-transform"
-        >
-          see my result
-        </button>
-      </div>
+      <FoodQuestions
+        result={result}
+        answers={answers}
+        setAnswers={setAnswers}
+        freeText={freeText}
+        setFreeText={setFreeText}
+        heading={`Sounds like ${result.name}!`}
+        onContinue={() => setStep('result')}
+      />
     );
   }
 
-  // result step — auto-saves and confirms gently
-  const calories = computeCalories();
-
-  useEffect(() => {
-    onSaved({ name: result.name, emoji: result.emoji, calories });
-    const t = setTimeout(() => onClose(), 1700);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   return (
-    <div className="h-full flex flex-col px-6 pt-12 pb-28 screen-enter relative z-10">
-      <div className="flex-1 flex flex-col items-center justify-center text-center">
-        <div className="w-28 h-28 rounded-full bg-blossom-50 flex items-center justify-center text-6xl mb-5 shadow-softer">
-          {result.emoji}
-        </div>
-        <h2 className="font-display text-3xl text-gray-800 mb-1">{result.name}</h2>
-        <p className="text-xs text-gray-400 mb-5">{size} {extras.length > 0 ? `· ${extras.join(', ')}` : ''}</p>
-        <div className="bg-white rounded-4xl shadow-soft px-10 py-6 border border-blossom-100 mb-4">
-          <p className="font-display text-5xl text-blossom-500 leading-none">{calories}</p>
-          <p className="text-xs text-gray-400 font-semibold mt-1 tracking-wide">approx. calories</p>
-        </div>
-        <div className="bg-blossom-50 rounded-full px-5 py-2.5 pop">
-          <p className="text-sm font-semibold text-blossom-500">saved to your diary 🌸</p>
-        </div>
-      </div>
-    </div>
+    <FoodResult
+      result={result}
+      answers={answers}
+      freeText={freeText}
+      onSaved={onSaved}
+      onClose={onClose}
+    />
   );
 }
 
