@@ -41,6 +41,9 @@
             200: '#E6DCFF',
             300: '#D6C7FF',
           },
+          rose: {
+            deep: '#C2476B',
+          },
         },
         fontFamily: {
           serif: ['Cormorant Garamond', 'serif'],
@@ -686,6 +689,32 @@ function Petals({ count = 8 }) {
 }
 
 /* ---------------------------------------------------------
+   Brand logo: "bloom" in italic serif, deep rose, with a
+   single minimal cherry blossom in place of the dot
+--------------------------------------------------------- */
+function BlossomGlyph({ className = '' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} style={{ width: '0.46em', height: '0.46em' }}>
+      <g fill="currentColor">
+        {[0, 72, 144, 216, 288].map(angle => (
+          <ellipse key={angle} cx="12" cy="7" rx="2.4" ry="4" transform={`rotate(${angle} 12 12)`} />
+        ))}
+      </g>
+      <circle cx="12" cy="12" r="1.4" fill="#FFF7FA" />
+    </svg>
+  );
+}
+
+function Logo({ className = '' }) {
+  return (
+    <span className={`font-display italic text-rose-deep inline-flex items-baseline gap-[0.06em] ${className}`}>
+      bloom
+      <BlossomGlyph className="relative top-[0.07em]" />
+    </span>
+  );
+}
+
+/* ---------------------------------------------------------
    Bottom navigation
 --------------------------------------------------------- */
 const NAV_ITEMS = [
@@ -785,7 +814,7 @@ function HomeScreen({ diary, goal, onScan, onOpenWheel }) {
     <div className="h-full flex flex-col px-5 sm:px-6 pt-8 pb-28 screen-enter relative z-10">
       <div className="text-center mb-5">
         <p className="text-sm text-blossom-500 font-semibold tracking-wide uppercase">{prettyDate(today)}</p>
-        <h1 className="font-display italic text-4xl text-gray-800 mt-1">bloom.</h1>
+        <h1 className="text-4xl mt-1"><Logo /></h1>
       </div>
 
       {/* Calorie progress wheel */}
@@ -823,7 +852,7 @@ function HomeScreen({ diary, goal, onScan, onOpenWheel }) {
 
       {/* Food list */}
       <p className="text-sm font-semibold text-gray-500 mb-3 px-1">Logged today</p>
-      <div className="flex-1 overflow-y-auto no-scrollbar space-y-3">
+      <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-3">
         {entries.length === 0 && (
           <div className="text-center text-gray-400 text-sm pt-10 font-medium">
             Nothing logged yet today 🌱<br/>tap the camera to add your first bite
@@ -1012,12 +1041,12 @@ function CameraScreen({ onSaved, onClose }) {
       <div className="h-full flex flex-col screen-enter relative z-10">
         <div className="flex items-center justify-between px-6 pt-8 pb-4">
           <button onClick={onClose} className="text-gray-400 text-sm font-semibold">close</button>
-          <p className="font-display italic text-2xl text-gray-800">bloom.</p>
+          <p className="text-2xl"><Logo /></p>
           <div className="w-10"></div>
         </div>
 
         {/* Viewfinder */}
-        <div className="flex-1 mx-5 rounded-4xl relative overflow-hidden border-4 border-white shadow-soft"
+        <div className="flex-1 min-h-0 mx-5 rounded-4xl relative overflow-hidden border-4 border-white shadow-soft"
              style={{ background: 'linear-gradient(160deg, #FFE3EE 0%, #F0E2FF 60%, #FFE9F2 100%)' }}>
           <Petals count={6} />
           <div className="absolute inset-0 flex items-center justify-center flex-col gap-3 z-10">
@@ -1094,7 +1123,7 @@ function CalendarScreen({ diary }) {
   return (
     <div className="h-full flex flex-col px-6 pt-8 pb-28 screen-enter relative z-10">
       <div className="text-center mb-5">
-        <h1 className="font-display italic text-3xl text-gray-800">bloom.</h1>
+        <h1 className="text-3xl"><Logo /></h1>
         <p className="text-xs text-gray-400 font-medium mt-1">your food journal</p>
       </div>
 
@@ -1149,7 +1178,7 @@ function CalendarScreen({ diary }) {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar space-y-3">
+      <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-3">
         {selectedEntries.length === 0 && (
           <div className="text-center text-gray-400 text-sm pt-8 font-medium">
             No entries this day 🌷
@@ -1194,6 +1223,7 @@ function ProfileScreen({ goal, setGoal, cyclePhase, setCyclePhase, vibe, setVibe
   return (
     <div className="h-full flex flex-col px-6 pt-8 pb-28 screen-enter relative z-10 overflow-y-auto no-scrollbar">
       <div className="text-center mb-6">
+        <p className="text-2xl mb-3"><Logo /></p>
         <div className="w-24 h-24 mx-auto rounded-full bg-gradient-to-br from-blossom-200 to-lilac-200 flex items-center justify-center text-4xl shadow-soft mb-3">
           🌸
         </div>
@@ -1365,7 +1395,7 @@ function AddScreen({ onSaved, onClose }) {
       <div className="h-full flex flex-col px-6 pt-8 pb-28 screen-enter relative z-10">
         <div className="flex items-center justify-between mb-6">
           <button onClick={onClose} className="text-gray-400 text-sm font-semibold">close</button>
-          <p className="font-display italic text-2xl text-gray-800">bloom.</p>
+          <p className="text-2xl"><Logo /></p>
           <div className="w-10"></div>
         </div>
 
