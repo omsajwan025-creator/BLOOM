@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#FFFFFF">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="bloom.">
 <meta name="format-detection" content="telephone=no">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -122,7 +122,7 @@
   * { scrollbar-width: none; -ms-overflow-style: none; }
 
   /* prevent any horizontal scroll */
-  #root, #app-root { overflow-x: hidden; max-width: 100vw; }
+  #root, #app-root { overflow-x: hidden; width: 100%; height: 100%; max-width: 100vw; }
 
   /* Floating cherry blossom petals */
   .petal {
@@ -194,6 +194,34 @@
   }
   button.tap-sm { min-height: 36px; }
 
+  /* soft press feedback for every tappable element */
+  button:active, [role="button"]:active {
+    transform: scale(0.96);
+    transition: transform 0.1s ease;
+  }
+
+  /* tiny blossom celebration when an entry is logged */
+  .bloom-celebrate {
+    animation: bloomCelebrate 1s ease forwards;
+  }
+  @keyframes bloomCelebrate {
+    0%   { opacity: 0; transform: translateX(-50%) scale(0.3) rotate(-15deg); }
+    35%  { opacity: 1; transform: translateX(-50%) scale(1.15) rotate(8deg); }
+    60%  { opacity: 1; transform: translateX(-50%) scale(1) rotate(0deg); }
+    100% { opacity: 0; transform: translateX(-50%) scale(0.85) rotate(0deg); }
+  }
+
+  /* gentle spinning blossom loading indicator */
+  .blossom-spin {
+    display: inline-block;
+    animation: blossomSpin 1.4s ease-in-out infinite;
+  }
+  @keyframes blossomSpin {
+    0%   { transform: rotate(0deg) scale(1); }
+    50%  { transform: rotate(180deg) scale(1.15); }
+    100% { transform: rotate(360deg) scale(1); }
+  }
+
   /* gentle save confirmation badge */
   .save-toast {
     animation: saveFade 1.6s ease forwards;
@@ -215,12 +243,12 @@
   }
 </style>
 </head>
-<body class="min-h-screen flex items-center justify-center p-0 sm:p-6">
+<body class="min-h-screen p-0">
 
 <div id="root"></div>
 
 <script type="text/babel" data-presets="env,react">
-const { useState, useMemo, useEffect } = React;
+const { useState, useMemo, useEffect, useRef } = React;
 
 /* ---------------------------------------------------------
    Helpers
@@ -242,6 +270,18 @@ function addDays(date, delta) {
 
 function prettyDate(d) {
   return `${WEEKDAY_LONG[d.getDay()]}, ${MONTH_NAMES[d.getMonth()]} ${d.getDate()}`;
+}
+
+// turns a day's entries into a warm, plain-language summary
+function summarizeDay(dayLabel, entries) {
+  if (!entries || entries.length === 0) return null;
+  const timeLabels = ['in the morning', 'for lunch', 'for dinner', 'as a little extra'];
+  const parts = entries.map((e, i) => `${e.name.toLowerCase()} ${timeLabels[Math.min(i, timeLabels.length - 1)]}`);
+  let joined;
+  if (parts.length === 1) joined = parts[0];
+  else if (parts.length === 2) joined = `${parts[0]} and ${parts[1]}`;
+  else joined = `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+  return `${dayLabel} was a good day — you had ${joined} 🌸`;
 }
 
 /* ---------------------------------------------------------
@@ -801,7 +841,7 @@ function BottomNav({ active, onChange }) {
 /* ---------------------------------------------------------
    Screen 1: Home / Today
 --------------------------------------------------------- */
-function HomeScreen({ diary, goal, onScan, onOpenWheel }) {
+function HomeScreen({ diary, goal, cyclePhase, onScan, onOpenWheel }) {
   const entries = diary[todayKey] || [];
   const total = entries.reduce((sum, e) => sum + e.calories, 0);
   const pct = Math.min(1, total / goal);
@@ -815,6 +855,11 @@ function HomeScreen({ diary, goal, onScan, onOpenWheel }) {
       <div className="text-center mb-5">
         <p className="text-sm text-blossom-500 font-semibold tracking-wide uppercase">{prettyDate(today)}</p>
         <h1 className="text-4xl mt-1"><Logo /></h1>
+        {cyclePhase && CYCLE_NOTES[cyclePhase] && (
+          <p className="text-[11px] text-gray-400 font-medium mt-2 px-4 leading-snug">
+            {CYCLE_NOTES[cyclePhase]}
+          </p>
+        )}
       </div>
 
       {/* Calorie progress wheel */}
@@ -855,7 +900,7 @@ function HomeScreen({ diary, goal, onScan, onOpenWheel }) {
       <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-3">
         {entries.length === 0 && (
           <div className="text-center text-gray-400 text-sm pt-10 font-medium">
-            Nothing logged yet today 🌱<br/>tap the camera to add your first bite
+            your story starts today 🌸<br/>tap below to add your first bite
           </div>
         )}
         {entries.map((e, i) => (
@@ -873,22 +918,22 @@ function HomeScreen({ diary, goal, onScan, onOpenWheel }) {
             </div>
           </div>
         ))}
-      </div>
 
-      {/* Scan button */}
-      <div className="flex justify-center mt-6">
-        <button
-          onClick={onScan}
-          className="shutter-pulse w-20 h-20 rounded-full bg-gradient-to-br from-blossom-300 to-blossom-500 shadow-soft flex items-center justify-center text-white active:scale-95 transition-transform"
-        >
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-            <rect x="3" y="7" width="18" height="13" rx="3" stroke="white" strokeWidth="2"/>
-            <path d="M8 7l1.5-2.5h5L16 7" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            <circle cx="12" cy="13.5" r="3.2" stroke="white" strokeWidth="2"/>
-          </svg>
-        </button>
+        {/* Scan button */}
+        <div className="flex justify-center pt-4">
+          <button
+            onClick={onScan}
+            className="shutter-pulse w-20 h-20 rounded-full bg-gradient-to-br from-blossom-300 to-blossom-500 shadow-soft flex items-center justify-center text-white active:scale-95 transition-transform"
+          >
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+              <rect x="3" y="7" width="18" height="13" rx="3" stroke="white" strokeWidth="2"/>
+              <path d="M8 7l1.5-2.5h5L16 7" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <circle cx="12" cy="13.5" r="3.2" stroke="white" strokeWidth="2"/>
+            </svg>
+          </button>
+        </div>
+        <p className="text-center text-xs text-blossom-400 font-semibold mt-2 tracking-wide pb-2">tap to scan food</p>
       </div>
-      <p className="text-center text-xs text-blossom-400 font-semibold mt-2 tracking-wide">tap to scan food</p>
     </div>
   );
 }
@@ -1002,7 +1047,8 @@ function FoodResult({ result, answers, freeText, onSaved, onClose }) {
 
   return (
     <div className="h-full flex flex-col px-6 pt-12 pb-28 screen-enter relative z-10">
-      <div className="flex-1 flex flex-col items-center justify-center text-center">
+      <div className="flex-1 flex flex-col items-center justify-center text-center relative">
+        <div className="bloom-celebrate text-4xl absolute left-1/2" style={{ top: '4%' }} aria-hidden="true">🌸</div>
         <div className="w-28 h-28 rounded-full bg-blossom-50 flex items-center justify-center text-6xl mb-5 shadow-softer">
           {result.emoji}
         </div>
@@ -1027,6 +1073,40 @@ function CameraScreen({ onSaved, onClose }) {
   const [answers, setAnswers] = useState({});
   const [freeText, setFreeText] = useState('');
   const [result, setResult] = useState(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState(false);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+        .then(stream => {
+          if (cancelled) {
+            stream.getTracks().forEach(t => t.stop());
+            return;
+          }
+          streamRef.current = stream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+          setCameraReady(true);
+        })
+        .catch(() => {
+          if (!cancelled) setCameraError(true);
+        });
+    } else {
+      setCameraError(true);
+    }
+    return () => {
+      cancelled = true;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
 
   const takePhoto = () => {
     const food = FOOD_DB[Math.floor(Math.random() * FOOD_DB.length)];
@@ -1048,14 +1128,26 @@ function CameraScreen({ onSaved, onClose }) {
         {/* Viewfinder */}
         <div className="flex-1 min-h-0 mx-5 rounded-4xl relative overflow-hidden border-4 border-white shadow-soft"
              style={{ background: 'linear-gradient(160deg, #FFE3EE 0%, #F0E2FF 60%, #FFE9F2 100%)' }}>
-          <Petals count={6} />
-          <div className="absolute inset-0 flex items-center justify-center flex-col gap-3 z-10">
-            <div className="text-6xl">🍽️</div>
-            <p className="text-blossom-500 font-semibold text-sm">point at your food</p>
-          </div>
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="absolute inset-0 w-full h-full object-cover"
+            style={{ opacity: cameraReady ? 1 : 0 }}
+          />
+          {!cameraReady && <Petals count={6} />}
+          {!cameraReady && (
+            <div className="absolute inset-0 flex items-center justify-center flex-col gap-3 z-10">
+              <div className="text-6xl">🍽️</div>
+              <p className="text-blossom-500 font-semibold text-sm">
+                {cameraError ? 'allow camera access to see your food' : 'getting your camera ready...'}
+              </p>
+            </div>
+          )}
           {/* viewfinder corners */}
           {['top-6 left-6 border-t-2 border-l-2', 'top-6 right-6 border-t-2 border-r-2', 'bottom-6 left-6 border-b-2 border-l-2', 'bottom-6 right-6 border-b-2 border-r-2'].map((cls,i) => (
-            <div key={i} className={`absolute w-8 h-8 border-white/80 rounded-sm ${cls}`}></div>
+            <div key={i} className={`absolute w-8 h-8 border-white/80 rounded-sm z-10 ${cls}`}></div>
           ))}
         </div>
 
@@ -1119,6 +1211,9 @@ function CalendarScreen({ diary }) {
 
   const selectedEntries = diary[toKey(selected)] || [];
   const selectedTotal = selectedEntries.reduce((s,e) => s + e.calories, 0);
+  const isSelectedToday = toKey(selected) === todayKey;
+  const dayLabel = isSelectedToday ? 'Today' : WEEKDAY_LONG[selected.getDay()];
+  const daySummary = summarizeDay(dayLabel, selectedEntries);
 
   return (
     <div className="h-full flex flex-col px-6 pt-8 pb-28 screen-enter relative z-10">
@@ -1129,9 +1224,9 @@ function CalendarScreen({ diary }) {
 
       <div className="bg-white rounded-4xl shadow-soft p-5 border border-blossom-100 mb-4">
         <div className="flex items-center justify-between mb-4">
-          <button onClick={() => changeMonth(-1)} className="w-8 h-8 rounded-full bg-blossom-50 flex items-center justify-center text-blossom-400 font-bold">‹</button>
+          <button onClick={() => changeMonth(-1)} className="w-11 h-11 rounded-full bg-blossom-50 flex items-center justify-center text-blossom-400 font-bold">‹</button>
           <p className="font-display text-lg text-gray-700">{MONTH_NAMES[month]} {year}</p>
-          <button onClick={() => changeMonth(1)} className="w-8 h-8 rounded-full bg-blossom-50 flex items-center justify-center text-blossom-400 font-bold">›</button>
+          <button onClick={() => changeMonth(1)} className="w-11 h-11 rounded-full bg-blossom-50 flex items-center justify-center text-blossom-400 font-bold">›</button>
         </div>
 
         <div className="grid grid-cols-7 mb-2">
@@ -1178,10 +1273,16 @@ function CalendarScreen({ diary }) {
         )}
       </div>
 
+      {daySummary && (
+        <div className="bg-gradient-to-br from-blossom-50 to-lilac-100 rounded-3xl p-4 mb-3">
+          <p className="text-xs text-gray-600 leading-relaxed">{daySummary}</p>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-3">
         {selectedEntries.length === 0 && (
           <div className="text-center text-gray-400 text-sm pt-8 font-medium">
-            No entries this day 🌷
+            {isSelectedToday ? <>your story starts today 🌸</> : <>no entries this day 🌷</>}
           </div>
         )}
         {selectedEntries.map((e, i) => (
@@ -1221,8 +1322,8 @@ function ProfileScreen({ goal, setGoal, cyclePhase, setCyclePhase, vibe, setVibe
     : 'Not tracking';
 
   return (
-    <div className="h-full flex flex-col px-6 pt-8 pb-28 screen-enter relative z-10 overflow-y-auto no-scrollbar">
-      <div className="text-center mb-6">
+    <div className="h-full flex flex-col px-6 pt-8 pb-28 screen-enter relative z-10">
+      <div className="text-center mb-5">
         <p className="text-2xl mb-3"><Logo /></p>
         <div className="w-24 h-24 mx-auto rounded-full bg-gradient-to-br from-blossom-200 to-lilac-200 flex items-center justify-center text-4xl shadow-soft mb-3">
           🌸
@@ -1231,8 +1332,10 @@ function ProfileScreen({ goal, setGoal, cyclePhase, setCyclePhase, vibe, setVibe
         <p className="text-xs text-gray-400 font-medium">mia.bloom@email.com</p>
       </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-5">
+
       {/* Streak */}
-      <div className="bg-gradient-to-br from-blossom-100 to-lilac-100 rounded-4xl shadow-softer p-5 mb-5 flex items-center gap-4 border border-blossom-100">
+      <div className="bg-gradient-to-br from-blossom-100 to-lilac-100 rounded-4xl shadow-softer p-5 flex items-center gap-4 border border-blossom-100">
         <div className="text-4xl">🌸</div>
         <div>
           <p className="font-display text-2xl text-gray-800 leading-none">14 day streak</p>
@@ -1241,7 +1344,7 @@ function ProfileScreen({ goal, setGoal, cyclePhase, setCyclePhase, vibe, setVibe
       </div>
 
       {/* Vibe check */}
-      <div className="bg-white rounded-4xl shadow-softer p-5 mb-5 border border-blossom-50">
+      <div className="bg-white rounded-4xl shadow-softer p-5 border border-blossom-50">
         <p className="font-semibold text-gray-600 text-sm mb-3">how are you feeling today?</p>
         <div className="flex justify-between">
           {VIBES.map((v, i) => (
@@ -1259,6 +1362,7 @@ function ProfileScreen({ goal, setGoal, cyclePhase, setCyclePhase, vibe, setVibe
       </div>
 
       {/* Settings */}
+      <div>
       <p className="text-sm font-semibold text-gray-500 mb-3 px-1">settings</p>
       <div className="space-y-2.5">
 
@@ -1365,6 +1469,9 @@ function ProfileScreen({ goal, setGoal, cyclePhase, setCyclePhase, vibe, setVibe
           );
         })}
       </div>
+      </div>
+
+      </div>
     </div>
   );
 }
@@ -1427,7 +1534,7 @@ function AddScreen({ onSaved, onClose }) {
   if (step === 'thinking') {
     return (
       <div className="h-full flex flex-col items-center justify-center screen-enter relative z-10">
-        <div className="text-5xl mb-4 animate-bounce">🌸</div>
+        <div className="text-5xl mb-4 blossom-spin">🌸</div>
         <p className="text-blossom-400 font-semibold text-sm">thinking about your meal...</p>
       </div>
     );
@@ -1465,29 +1572,27 @@ function NutrientPanel({ diary, goal, cyclePhase, onClose }) {
   const entries = diary[todayKey] || [];
   const total = entries.reduce((s, e) => s + e.calories, 0);
 
-  const presentTags = useMemo(() => {
+  const todayTags = useMemo(() => {
     const tags = new Set();
-    for (let i = 0; i < 7; i++) {
-      const dayEntries = diary[toKey(addDays(today, -i))] || [];
-      dayEntries.forEach(e => getNutrientTags(e.name).forEach(t => tags.add(t)));
-    }
+    entries.forEach(e => getNutrientTags(e.name).forEach(t => tags.add(t)));
     return tags;
   }, [diary]);
 
-  const missing = ALL_NUTRIENTS.filter(n => !presentTags.has(n)).slice(0, 2);
+  const missingToday = ALL_NUTRIENTS.filter(n => !todayTags.has(n)).slice(0, 3);
 
   const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 
-  let suggestions;
+  // gentle food ideas for the rest of the day, framed around what would feel good
+  let ideas = missingToday.map(n =>
+    `${cap(NUTRIENT_INFO[n].foods)} — your body might love these today ${NUTRIENT_INFO[n].emoji}`
+  );
   if (cyclePhase && CYCLE_SUGGESTIONS[cyclePhase]) {
-    suggestions = CYCLE_SUGGESTIONS[cyclePhase];
-  } else if (missing.length > 0) {
-    suggestions = missing.map(n =>
-      `${cap(NUTRIENT_INFO[n].foods)} could be lovely this week — they're rich in ${NUTRIENT_INFO[n].label} ${NUTRIENT_INFO[n].emoji}`
-    );
-  } else {
-    suggestions = ["You're nourishing your body so beautifully this week 🌸"];
+    ideas = [...CYCLE_SUGGESTIONS[cyclePhase], ...ideas];
   }
+  if (ideas.length === 0) {
+    ideas = ["You're nourishing your body so beautifully today 🌸"];
+  }
+  ideas = ideas.slice(0, 3);
 
   return (
     <div className="absolute inset-0 z-40">
@@ -1516,28 +1621,11 @@ function NutrientPanel({ diary, goal, cyclePhase, onClose }) {
             </div>
           )}
 
-          {/* nutrient gaps */}
-          {!cyclePhase && missing.length > 0 && (
-            <div className="mb-3">
-              <p className="text-sm font-semibold text-gray-600 mb-2 px-1">your body could use a little more of these this week</p>
-              <div className="space-y-2">
-                {missing.map(n => (
-                  <div key={n} className="bg-white border border-blossom-100 rounded-2xl p-3 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-blossom-50 flex items-center justify-center text-lg">{NUTRIENT_INFO[n].emoji}</div>
-                    <p className="text-xs text-gray-500 leading-relaxed flex-1">
-                      <span className="font-semibold text-gray-600 capitalize">{NUTRIENT_INFO[n].label}</span> — try {NUTRIENT_INFO[n].foods}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* personalised suggestions */}
+          {/* gentle food ideas for the rest of the day */}
           <div className="mb-2">
-            <p className="text-sm font-semibold text-gray-600 mb-2 px-1">a little something for you</p>
+            <p className="text-sm font-semibold text-gray-600 mb-2 px-1">your body might love these today</p>
             <div className="space-y-2">
-              {suggestions.slice(0, 3).map((s, i) => (
+              {ideas.map((s, i) => (
                 <div key={i} className="bg-gradient-to-br from-blossom-50 to-lilac-100 rounded-2xl p-3.5">
                   <p className="text-xs text-gray-600 leading-relaxed">{s}</p>
                 </div>
@@ -1584,14 +1672,17 @@ function App() {
   };
 
   let content;
-  if (screen === 'home') content = <HomeScreen diary={diary} goal={goal} onScan={() => setScreen('camera')} onOpenWheel={() => setShowWheel(true)} />;
+  if (screen === 'home') content = <HomeScreen diary={diary} goal={goal} cyclePhase={cyclePhase} onScan={() => setScreen('camera')} onOpenWheel={() => setShowWheel(true)} />;
   else if (screen === 'camera') content = <CameraScreen onSaved={handleSaved} onClose={() => setScreen('home')} />;
   else if (screen === 'add') content = <AddScreen onSaved={handleSaved} onClose={() => setScreen('home')} />;
   else if (screen === 'calendar') content = <CalendarScreen diary={diary} />;
   else content = <ProfileScreen goal={goal} setGoal={setGoal} cyclePhase={cyclePhase} setCyclePhase={setCyclePhase} vibe={vibe} setVibe={setVibe} />;
 
   return (
-    <div className="relative w-full h-[100dvh] sm:h-[844px] sm:max-h-[92vh] max-w-[430px] bg-[#FFF9FB] sm:rounded-[2.5rem] shadow-2xl overflow-hidden sm:border border-blossom-100">
+    <div
+      className="relative bg-[#FFF9FB] overflow-hidden"
+      style={{ width: '100vw', height: '100dvh', paddingTop: 'env(safe-area-inset-top)' }}
+    >
       <Petals count={10} />
       {content}
       <BottomNav active={screen} onChange={setScreen} />
